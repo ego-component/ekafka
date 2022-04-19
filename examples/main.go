@@ -54,7 +54,7 @@ func main() {
 	conf := `
 [kafka]
 	debug=true
-	brokers=["localhost:9091","localhost:9092","localhost:9093"]
+	brokers=["localhost:9092"]
 	[kafka.client]
         timeout="3s"
 	[kafka.producers.p1]        # 定义了名字为p1的producer

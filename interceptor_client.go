@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -142,11 +143,11 @@ func accessClientInterceptor(compName string, c *config, logger *elog.Component)
 				return err
 			}
 			if err != nil {
-				log.Println("[ekafka.response]", xdebug.MakeReqAndResError(fileWithLineNum(), compName,
+				log.Println("[ekafka.response]", xdebug.MakeReqAndResError(fileClientWithLineNum(), compName,
 					fmt.Sprintf("%v", c.Brokers), cost, fmt.Sprintf("%s %v", cmd.name, xstring.JSON(msgs.ToLog())), err.Error()),
 				)
 			} else {
-				log.Println("[ekafka.response]", xdebug.MakeReqAndResInfo(fileWithLineNum(), compName,
+				log.Println("[ekafka.response]", xdebug.MakeReqAndResInfo(fileClientWithLineNum(), compName,
 					fmt.Sprintf("%v", c.Brokers), cost, fmt.Sprintf("%s %v", cmd.name, xstring.JSON(msgs.ToLog())), fmt.Sprintf("%v", cmd.res)),
 				)
 			}
@@ -172,18 +173,16 @@ func metricClientInterceptor(compName string, config *config) ClientInterceptor 
 	}
 }
 
-func fileWithLineNum() string {
+func fileClientWithLineNum() string {
 	// the second caller usually from internal, so set i start from 2
 	for i := 2; i < 15; i++ {
 		_, file, line, ok := runtime.Caller(i)
 		if !ok {
 			break
 		}
-		fmt.Printf("line--------------->"+"%+v\n", line)
-		fmt.Printf("file--------------->"+"%+v\n", file)
-		//if (!strings.HasSuffix(file, "github/ego-component/egorm/interceptor.go") && !strings.Contains(file, "gorm.io/gorm")) || strings.HasSuffix(file, "_test.go") {
-		//	return file + ":" + strconv.FormatInt(int64(line), 10)
-		//}
+		if (!strings.HasSuffix(file, "ego-component/ekafka/interceptor_client.go") && !strings.Contains(file, "/ego-component/ekafka/producer.go")) || strings.HasSuffix(file, "_test.go") {
+			return file + ":" + strconv.FormatInt(int64(line), 10)
+		}
 	}
 	return ""
 }
