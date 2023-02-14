@@ -73,6 +73,11 @@ func (cmp *Component) Producer(name string) *Producer {
 			cmp.config.balancers,
 		))
 	}
+	transport := kafka.Transport{}
+	err := cmp.config.Authentication.ConfigureTransportAuthentication(&transport)
+	if err != nil {
+		cmp.logger.Panic("producer transport config error", elog.String("name", name), elog.Any("authentication", cmp.config.Authentication), elog.FieldErr(err))
+	}
 	producer := &Producer{
 		w: &kafka.Writer{
 			Addr:         kafka.TCP(cmp.config.Brokers...),
@@ -86,6 +91,7 @@ func (cmp *Component) Producer(name string) *Producer {
 			WriteTimeout: config.WriteTimeout,
 			RequiredAcks: config.RequiredAcks,
 			Async:        config.Async,
+			Transport:    &transport,
 		},
 		logMode: cmp.config.Debug,
 	}
@@ -119,6 +125,11 @@ func (cmp *Component) Consumer(name string) *Consumer {
 		cmp.consumerMu.Unlock()
 		cmp.logger.Panic("consumer config not exists", elog.String("name", name))
 	}
+	dialer := kafka.Dialer{}
+	err := cmp.config.Authentication.ConfigureDialerAuthentication(&dialer)
+	if err != nil {
+		cmp.logger.Panic("producer transport config error", elog.String("name", name), elog.Any("authentication", cmp.config.Authentication), elog.FieldErr(err))
+	}
 	logger := newKafkaLogger(cmp.logger)
 	errorLogger := newKafkaErrorLogger(cmp.logger)
 	consumer := &Consumer{
@@ -144,8 +155,9 @@ func (cmp *Component) Consumer(name string) *Consumer {
 			StartOffset:            config.StartOffset,
 			ReadBackoffMin:         config.ReadBackoffMin,
 			ReadBackoffMax:         config.ReadBackoffMax,
+			Dialer:                 &dialer,
 		}),
-		//processor: defaultProcessor,
+		// processor: defaultProcessor,
 		logMode: cmp.config.Debug,
 		Config:  config,
 		Brokers: cmp.config.Brokers,
@@ -219,9 +231,18 @@ func (cmp *Component) ConsumerGroup(name string) *ConsumerGroup {
 // Client 返回kafka Client
 func (cmp *Component) Client() *Client {
 	cmp.clientOnce.Do(func() {
+		transport := kafka.Transport{}
+		err := cmp.config.Authentication.ConfigureTransportAuthentication(&transport)
+		if err != nil {
+			cmp.logger.Panic("producer transport config error", elog.Any("authentication", cmp.config.Authentication), elog.FieldErr(err))
+		}
 		cmp.client = &Client{
-			cc: &kafka.Client{Addr: kafka.TCP(cmp.config.Brokers...), Timeout: cmp.config.Client.Timeout},
-			//processor: defaultProcessor,
+			cc: &kafka.Client{
+				Addr:      kafka.TCP(cmp.config.Brokers...),
+				Timeout:   cmp.config.Client.Timeout,
+				Transport: &transport,
+			},
+			// processor: defaultProcessor,
 			logMode: cmp.config.Debug,
 		}
 		cmp.client.wrapProcessor(cmp.interceptorClientChain())

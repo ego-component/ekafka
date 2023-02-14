@@ -463,6 +463,25 @@ func main() {
 }
 ```
 
+## TLS 配置
+
+```toml
+[kafka]
+	debug=true
+	brokers=["localhost:9091","localhost:9092","localhost:9093"]
+    [kafka.authentication]
+        [kafka.authentication.tls]
+            enabled=false
+            CAFile=""
+            CertFile="./cert/tls.pem"
+            KeyFile="./cert/tls.key"
+            InsecureSkipVerify=true
+	[kafka.client]
+		timeout="3s"
+	[kafka.producers.p1]        # 定义了名字为 p1 的 producer
+		topic="sre-infra-test"  # 指定生产消息的 topic
+```
+
 ## 测试
 
 ### E2E 测试

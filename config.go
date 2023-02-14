@@ -27,6 +27,8 @@ type config struct {
 	EnableAccessInterceptorReq bool // 是否开启记录请求参数，默认不开启
 	EnableAccessInterceptorRes bool // 是否开启记录响应参数，默认不开启
 	EnableMetricInterceptor    bool // 是否开启监控，默认开启
+	// TLS 参数支持
+	Authentication Authentication
 }
 
 type clientConfig struct {
