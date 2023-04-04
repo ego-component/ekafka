@@ -7,6 +7,7 @@ import (
 	"github.com/gotomicro/ego/core/elog"
 	"github.com/gotomicro/ego/core/etrace"
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -73,26 +74,56 @@ func (cmp *Component) Producer(name string) *Producer {
 			cmp.config.balancers,
 		))
 	}
-	transport := kafka.Transport{}
-	err := cmp.config.Authentication.ConfigureTransportAuthentication(&transport)
+
+	mechanism, err := NewMechanism(cmp.config.SASLMechanism, cmp.config.SASLUserName, cmp.config.SASLPassword)
+	if err != nil {
+		cmp.producerMu.Unlock()
+		cmp.logger.Panic(
+			"create mechanism error",
+			elog.String("mechanism", cmp.config.SASLMechanism),
+			elog.String("errorDetail", err.Error()),
+		)
+	}
+
+	var transport *kafka.Transport
+	if mechanism != nil {
+		cmp.logger.Debug(
+			"new transport with sasl mechanism",
+			elog.String("mechanism", cmp.config.SASLMechanism),
+			elog.String("username", cmp.config.SASLUserName),
+			elog.String("password", cmp.config.SASLPassword),
+		)
+		cmp.newProducerSASLTransport(transport, mechanism)
+	}
+
+	kafkaWriter := &kafka.Writer{
+		Addr:         kafka.TCP(cmp.config.Brokers...),
+		Topic:        config.Topic,
+		Balancer:     balancer,
+		MaxAttempts:  config.MaxAttempts,
+		BatchSize:    config.BatchSize,
+		BatchBytes:   config.BatchBytes,
+		BatchTimeout: config.BatchTimeout,
+		ReadTimeout:  config.ReadTimeout,
+		WriteTimeout: config.WriteTimeout,
+		RequiredAcks: config.RequiredAcks,
+		Async:        config.Async,
+	}
+
+	if transport != nil {
+		kafkaWriter.Transport = transport
+	}
+	if config.Compression > 0 {
+		cmp.logger.Debug("setup writer compression", elog.Int("compression", config.Compression))
+		kafkaWriter.Compression = kafka.Compression(config.Compression)
+	}
+
+	err = cmp.config.Authentication.ConfigureTransportAuthentication(transport)
 	if err != nil {
 		cmp.logger.Panic("producer transport config error", elog.String("name", name), elog.Any("authentication", cmp.config.Authentication), elog.FieldErr(err))
 	}
 	producer := &Producer{
-		w: &kafka.Writer{
-			Addr:         kafka.TCP(cmp.config.Brokers...),
-			Topic:        config.Topic,
-			Balancer:     balancer,
-			MaxAttempts:  config.MaxAttempts,
-			BatchSize:    config.BatchSize,
-			BatchBytes:   config.BatchBytes,
-			BatchTimeout: config.BatchTimeout,
-			ReadTimeout:  config.ReadTimeout,
-			WriteTimeout: config.WriteTimeout,
-			RequiredAcks: config.RequiredAcks,
-			Async:        config.Async,
-			Transport:    &transport,
-		},
+		w:       kafkaWriter,
 		logMode: cmp.config.Debug,
 	}
 	producer.setProcessor(cmp.interceptorClientChain())
@@ -132,31 +163,46 @@ func (cmp *Component) Consumer(name string) *Consumer {
 	}
 	logger := newKafkaLogger(cmp.logger)
 	errorLogger := newKafkaErrorLogger(cmp.logger)
+	mechanism, err := NewMechanism(cmp.config.SASLMechanism, cmp.config.SASLUserName, cmp.config.SASLPassword)
+	if err != nil {
+		cmp.consumerMu.Unlock()
+		cmp.logger.Panic("create mechanism error", elog.String("mechanism", cmp.config.SASLMechanism), elog.String("errorDetail", err.Error()))
+	}
+
+	readerConfig := kafka.ReaderConfig{
+		Brokers:                cmp.config.Brokers,
+		Topic:                  config.Topic,
+		GroupID:                config.GroupID,
+		Partition:              config.Partition,
+		MinBytes:               config.MinBytes,
+		MaxBytes:               config.MaxBytes,
+		WatchPartitionChanges:  config.WatchPartitionChanges,
+		PartitionWatchInterval: config.PartitionWatchInterval,
+		RebalanceTimeout:       config.RebalanceTimeout,
+		MaxWait:                config.MaxWait,
+		ReadLagInterval:        config.ReadLagInterval,
+		Logger:                 logger,
+		ErrorLogger:            errorLogger,
+		HeartbeatInterval:      config.HeartbeatInterval,
+		CommitInterval:         config.CommitInterval,
+		SessionTimeout:         config.SessionTimeout,
+		JoinGroupBackoff:       config.JoinGroupBackoff,
+		RetentionTime:          config.RetentionTime,
+		StartOffset:            config.StartOffset,
+		ReadBackoffMin:         config.ReadBackoffMin,
+		ReadBackoffMax:         config.ReadBackoffMax,
+	}
+
+	if mechanism != nil {
+		dialer := &kafka.Dialer{
+			DualStack:     true,
+			SASLMechanism: mechanism,
+		}
+		readerConfig.Dialer = dialer
+	}
+
 	consumer := &Consumer{
-		r: kafka.NewReader(kafka.ReaderConfig{
-			Brokers:                cmp.config.Brokers,
-			Topic:                  config.Topic,
-			GroupID:                config.GroupID,
-			Partition:              config.Partition,
-			MinBytes:               config.MinBytes,
-			MaxBytes:               config.MaxBytes,
-			WatchPartitionChanges:  config.WatchPartitionChanges,
-			PartitionWatchInterval: config.PartitionWatchInterval,
-			RebalanceTimeout:       config.RebalanceTimeout,
-			MaxWait:                config.MaxWait,
-			ReadLagInterval:        config.ReadLagInterval,
-			Logger:                 logger,
-			ErrorLogger:            errorLogger,
-			HeartbeatInterval:      config.HeartbeatInterval,
-			CommitInterval:         config.CommitInterval,
-			SessionTimeout:         config.SessionTimeout,
-			JoinGroupBackoff:       config.JoinGroupBackoff,
-			RetentionTime:          config.RetentionTime,
-			StartOffset:            config.StartOffset,
-			ReadBackoffMin:         config.ReadBackoffMin,
-			ReadBackoffMax:         config.ReadBackoffMax,
-			Dialer:                 &dialer,
-		}),
+		r: kafka.NewReader(readerConfig),
 		// processor: defaultProcessor,
 		logMode: cmp.config.Debug,
 		Config:  config,
@@ -206,6 +252,10 @@ func (cmp *Component) ConsumerGroup(name string) *ConsumerGroup {
 		JoinGroupBackoff:       config.JoinGroupBackoff,
 		StartOffset:            config.StartOffset,
 		RetentionTime:          config.RetentionTime,
+		Timeout:                config.Timeout,
+		SASLMechanism:          cmp.config.SASLMechanism,
+		SASLUserName:           cmp.config.SASLUserName,
+		SASLPassword:           cmp.config.SASLPassword,
 		Reader: readerOptions{
 			MinBytes:        config.MinBytes,
 			MaxBytes:        config.MaxBytes,
@@ -231,10 +281,17 @@ func (cmp *Component) ConsumerGroup(name string) *ConsumerGroup {
 // Client 返回kafka Client
 func (cmp *Component) Client() *Client {
 	cmp.clientOnce.Do(func() {
-		transport := kafka.Transport{}
+		var transport kafka.Transport
 		err := cmp.config.Authentication.ConfigureTransportAuthentication(&transport)
 		if err != nil {
 			cmp.logger.Panic("producer transport config error", elog.Any("authentication", cmp.config.Authentication), elog.FieldErr(err))
+		}
+		mechanism, err := NewMechanism(cmp.config.SASLMechanism, cmp.config.SASLUserName, cmp.config.SASLPassword)
+		if err != nil {
+			cmp.logger.Panic("create mechanism error", elog.String("mechanism", cmp.config.SASLMechanism), elog.String("errorDetail", err.Error()))
+		}
+		if mechanism != nil {
+			cmp.newProducerSASLTransport(&transport, mechanism)
 		}
 		cmp.client = &Client{
 			cc: &kafka.Client{
@@ -249,4 +306,13 @@ func (cmp *Component) Client() *Client {
 	})
 
 	return cmp.client
+}
+
+// newProducerSASLTransport make transport with SASL mechanism
+func (cmp *Component) newProducerSASLTransport(opts *kafka.Transport, m sasl.Mechanism) {
+	// Upgrade kafka-go >= v0.4.31 fixed "WriteMessages got unexpected EOF" issue
+	// Reference:
+	// https://github.com/segmentio/kafka-go/pull/869
+	opts.SASL = m
+	return
 }
