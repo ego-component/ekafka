@@ -7,12 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ego-component/ekafka"
 	"github.com/gotomicro/ego/core/constant"
 	"github.com/gotomicro/ego/core/elog"
 	"github.com/gotomicro/ego/core/emetric"
 	"github.com/gotomicro/ego/server"
 	"github.com/segmentio/kafka-go"
+
+	"github.com/ego-component/ekafka"
 )
 
 // OnEachMessageHandler 的最大重试次数
@@ -30,6 +31,7 @@ const (
 	consumptionModeOnConsumerStart consumptionMode = iota + 1
 	consumptionModeOnConsumerEachMessage
 	consumptionModeOnConsumerGroupStart
+	consumptionModeOnConsumerConsumeEachMessage
 )
 
 // Component starts an Ego server for message consuming.
@@ -91,6 +93,8 @@ func (cmp *Component) Start() error {
 		return cmp.launchOnConsumerGroupStart()
 	case consumptionModeOnConsumerEachMessage:
 		return cmp.launchOnConsumerEachMessage()
+	case consumptionModeOnConsumerConsumeEachMessage:
+		return cmp.launchOnConsumerConsumeEachMessage()
 	default:
 		return fmt.Errorf("undefined consumption mode: %v", cmp.mode)
 	}
@@ -107,9 +111,18 @@ func (cmp *Component) ConsumerGroup() *ekafka.ConsumerGroup {
 }
 
 // OnEachMessage ...
+// Deprecated: use OnConsumeEachMessage instead.
 func (cmp *Component) OnEachMessage(consumptionErrors chan<- error, handler OnEachMessageHandler) error {
 	cmp.consumptionErrors = consumptionErrors
 	cmp.mode = consumptionModeOnConsumerEachMessage
+	cmp.onEachMessageHandler = handler
+	return nil
+}
+
+// OnConsumeEachMessage register a handler for each message. When the handler returns an error, the message will be
+// retried if the error is ErrRecoverableError else the message will not be committed.
+func (cmp *Component) OnConsumeEachMessage(handler OnEachMessageHandler) error {
+	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
 	cmp.onEachMessageHandler = handler
 	return nil
 }
@@ -303,6 +316,125 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 
 			if err != nil {
 				cmp.consumptionErrors <- err
+				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err))
+
+				// If this error is unrecoverable, stop retry and consuming.
+				if isErrorUnrecoverable(err) {
+					unrecoverableError <- err
+					return
+				}
+
+				if cmp.ServerCtx.Err() != nil {
+					return
+				}
+
+				// Try to commit this message again.
+				cmp.logger.Debug("try to commit message again")
+				goto COMMIT
+			}
+		}
+	}()
+
+	select {
+	case <-cmp.ServerCtx.Done():
+		rootErr := cmp.ServerCtx.Err()
+		cmp.logger.Error("terminating consumer because a context error", elog.FieldErr(rootErr))
+
+		err := cmp.closeConsumer(consumer)
+		if err != nil {
+			return fmt.Errorf("encountered an error while closing consumer: %w", err)
+		}
+
+		if errors.Is(rootErr, context.Canceled) {
+			return nil
+		}
+
+		return rootErr
+	case originErr := <-unrecoverableError:
+		if originErr == nil {
+			panic("unrecoverableError should receive an error instead of nil")
+		}
+
+		cmp.logger.Fatal("stopping server because of an unrecoverable error", elog.FieldErr(originErr))
+		cmp.Stop()
+
+		err := cmp.closeConsumer(consumer)
+		if err != nil {
+			return fmt.Errorf("exiting due to an unrecoverable error, but encountered an error while closing consumer: %w", err)
+		}
+		return originErr
+	}
+}
+
+func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
+	consumer := cmp.Consumer()
+	if cmp.onEachMessageHandler == nil {
+		return errors.New("you must define a MessageHandler first")
+	}
+
+	var (
+		compNameTopic = fmt.Sprintf("%s.%s", cmp.ekafkaComponent.GetCompName(), consumer.Config.Topic)
+		brokers       = strings.Join(consumer.Brokers, ",")
+	)
+
+	unrecoverableError := make(chan error)
+	go func() {
+		for {
+			if cmp.ServerCtx.Err() != nil {
+				return
+			}
+			// The beginning of time monitoring point in time
+			now := time.Now()
+			message, fetchCtx, err := consumer.FetchMessage(cmp.ServerCtx)
+			if err != nil {
+				if cmp.consumptionErrors != nil {
+					cmp.consumptionErrors <- err
+				}
+				cmp.logger.Error("encountered an error while fetching message", elog.FieldErr(err))
+
+				// If this error is unrecoverable, stop consuming.
+				if isErrorUnrecoverable(err) {
+					unrecoverableError <- err
+					return
+				}
+				// Otherwise, try to fetch message again.
+				continue
+			}
+			retryCount := 0
+
+		HANDLER:
+			err = cmp.onEachMessageHandler(fetchCtx, message)
+			// Record the redis time-consuming
+			emetric.ClientHandleHistogram.WithLabelValues("kafka", compNameTopic, "HANDLER", brokers).Observe(time.Since(now).Seconds())
+			if err != nil {
+				emetric.ClientHandleCounter.Inc("kafka", compNameTopic, "HANDLER", brokers, "Error")
+			} else {
+				emetric.ClientHandleCounter.Inc("kafka", compNameTopic, "HANDLER", brokers, "OK")
+			}
+
+			if err != nil {
+				cmp.logger.Error("encountered an error while handling message", elog.FieldErr(err))
+
+				// If it's a retryable error, we should execute the handler again.
+				if errors.Is(err, ErrRecoverableError) && retryCount < maxOnEachMessageHandlerRetryCount {
+					retryCount++
+					goto HANDLER
+				}
+				// Otherwise should be considered as skipping commit message.
+				continue
+			}
+		COMMIT:
+			err = consumer.CommitMessages(fetchCtx, &message)
+
+			// Record the redis time-consuming
+			emetric.ClientHandleHistogram.WithLabelValues("kafka", compNameTopic, "COMMIT", brokers).Observe(time.Since(now).Seconds())
+			if err != nil {
+				emetric.ClientHandleCounter.Inc("kafka", compNameTopic, "COMMIT", brokers, "Error")
+			} else {
+				emetric.ClientHandleCounter.Inc("kafka", compNameTopic, "COMMIT", brokers, "OK")
+			}
+
+			if err != nil {
 				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err))
 
 				// If this error is unrecoverable, stop retry and consuming.
