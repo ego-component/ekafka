@@ -275,6 +275,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 				continue
 			}
 			retryCount := 0
+			msgId := fmt.Sprintf("%s_%d_%d", consumer.Config.Topic, message.Partition, message.Offset)
 
 		HANDLER:
 
@@ -289,7 +290,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 			}
 
 			if err != nil {
-				cmp.logger.Error("encountered an error while handling message", elog.FieldErr(err))
+				cmp.logger.Error("encountered an error while handling message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 				cmp.consumptionErrors <- err
 
 				// If it's a retryable error, we should execute the handler again.
@@ -316,7 +317,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 
 			if err != nil {
 				cmp.consumptionErrors <- err
-				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err))
+				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 
 				// If this error is unrecoverable, stop retry and consuming.
 				if isErrorUnrecoverable(err) {
@@ -329,7 +330,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 				}
 
 				// Try to commit this message again.
-				cmp.logger.Debug("try to commit message again")
+				cmp.logger.Debug("try to commit message again", elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 				goto COMMIT
 			}
 		}
@@ -401,6 +402,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 				continue
 			}
 			retryCount := 0
+			msgId := fmt.Sprintf("%s_%d_%d", consumer.Config.Topic, message.Partition, message.Offset)
 
 		HANDLER:
 			err = cmp.onEachMessageHandler(fetchCtx, message)
@@ -413,7 +415,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			}
 
 			if err != nil {
-				cmp.logger.Error("encountered an error while handling message", elog.FieldErr(err))
+				cmp.logger.Error("encountered an error while handling message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 
 				// If it's a retryable error, we should execute the handler again.
 				if errors.Is(err, ErrRecoverableError) && retryCount < maxOnEachMessageHandlerRetryCount {
@@ -421,6 +423,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 					goto HANDLER
 				}
 				// Otherwise should be considered as skipping commit message.
+				cmp.logger.Info("skipping commit message", elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 				continue
 			}
 		COMMIT:
@@ -435,7 +438,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			}
 
 			if err != nil {
-				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err))
+				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 
 				// If this error is unrecoverable, stop retry and consuming.
 				if isErrorUnrecoverable(err) {
@@ -448,7 +451,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 				}
 
 				// Try to commit this message again.
-				cmp.logger.Debug("try to commit message again")
+				cmp.logger.Debug("try to commit message again", elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 				goto COMMIT
 			}
 		}
