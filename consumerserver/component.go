@@ -298,7 +298,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 		COMMIT:
 			err = consumer.CommitMessages(fetchCtx, &message)
 
-			// Record the redis time-consuming
+			// Record the kafka time-consuming
 			emetric.ClientHandleHistogram.WithLabelValues("kafka", compNameTopic, "COMMIT", brokers).Observe(time.Since(now).Seconds())
 			if err != nil {
 				emetric.ClientHandleCounter.Inc("kafka", compNameTopic, "COMMIT", brokers, "Error")
@@ -374,15 +374,19 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			}
 
 			if err != nil {
-				cmp.logger.Error("encountered an error while handling message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
+				if errors.Is(err, ErrDoNotCommit) {
+					cmp.logger.Debug("skipping commit message due to NotCommit error", elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
+					continue
+				}
 
 				// If it's a retryable error, we should execute the handler again.
 				if errors.Is(err, ErrRecoverableError) && retryCount < maxOnEachMessageHandlerRetryCount {
+					cmp.logger.Warn("encountered an error while handling message, will retry handling it", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 					retryCount++
 					goto HANDLER
 				}
 				// Otherwise should be considered as skipping commit message.
-				cmp.logger.Info("skipping commit message", elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
+				cmp.logger.Error("skipping commit message due to an error", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 				continue
 			}
 		COMMIT:

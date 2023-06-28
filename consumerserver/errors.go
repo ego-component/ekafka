@@ -2,4 +2,7 @@ package consumerserver
 
 import "errors"
 
-var ErrRecoverableError error = errors.New("recoverable error is retryable")
+var (
+	ErrRecoverableError = errors.New("recoverable error is retryable")
+	ErrDoNotCommit      = errors.New("do not commit")
+)
