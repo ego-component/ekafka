@@ -253,7 +253,6 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 		brokers       = strings.Join(consumer.Brokers, ",")
 	)
 
-	unrecoverableError := make(chan error)
 	go func() {
 		for {
 			if cmp.ServerCtx.Err() != nil {
@@ -266,12 +265,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 				cmp.consumptionErrors <- err
 				cmp.logger.Error("encountered an error while fetching message", elog.FieldErr(err))
 
-				// If this error is unrecoverable, stop consuming.
-				if isErrorUnrecoverable(err) {
-					unrecoverableError <- err
-					return
-				}
-				// Otherwise, try to fetch message again.
+				// try to fetch message again.
 				continue
 			}
 			retryCount := 0
@@ -298,10 +292,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 					retryCount++
 					goto HANDLER
 				}
-				// Otherwise should be considered as an unrecoverable
-				// error, developers should write their own retry logic in the handler.
-				unrecoverableError <- err
-				return
+				continue
 			}
 
 		COMMIT:
@@ -318,16 +309,6 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 			if err != nil {
 				cmp.consumptionErrors <- err
 				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
-
-				// If this error is unrecoverable, stop retry and consuming.
-				if isErrorUnrecoverable(err) {
-					unrecoverableError <- err
-					return
-				}
-
-				if cmp.ServerCtx.Err() != nil {
-					return
-				}
 
 				// Try to commit this message again.
 				cmp.logger.Debug("try to commit message again", elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
@@ -351,19 +332,6 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 		}
 
 		return rootErr
-	case originErr := <-unrecoverableError:
-		if originErr == nil {
-			panic("unrecoverableError should receive an error instead of nil")
-		}
-
-		cmp.logger.Fatal("stopping server because of an unrecoverable error", elog.FieldErr(originErr))
-		cmp.Stop()
-
-		err := cmp.closeConsumer(consumer)
-		if err != nil {
-			return fmt.Errorf("exiting due to an unrecoverable error, but encountered an error while closing consumer: %w", err)
-		}
-		return originErr
 	}
 }
 
@@ -378,7 +346,6 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 		brokers       = strings.Join(consumer.Brokers, ",")
 	)
 
-	unrecoverableError := make(chan error)
 	go func() {
 		for {
 			if cmp.ServerCtx.Err() != nil {
@@ -393,12 +360,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 				}
 				cmp.logger.Error("encountered an error while fetching message", elog.FieldErr(err))
 
-				// If this error is unrecoverable, stop consuming.
-				if isErrorUnrecoverable(err) {
-					unrecoverableError <- err
-					return
-				}
-				// Otherwise, try to fetch message again.
+				// try to fetch message again.
 				continue
 			}
 			retryCount := 0
@@ -440,16 +402,6 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			if err != nil {
 				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 
-				// If this error is unrecoverable, stop retry and consuming.
-				if isErrorUnrecoverable(err) {
-					unrecoverableError <- err
-					return
-				}
-
-				if cmp.ServerCtx.Err() != nil {
-					return
-				}
-
 				// Try to commit this message again.
 				cmp.logger.Debug("try to commit message again", elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 				goto COMMIT
@@ -472,19 +424,6 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 		}
 
 		return rootErr
-	case originErr := <-unrecoverableError:
-		if originErr == nil {
-			panic("unrecoverableError should receive an error instead of nil")
-		}
-
-		cmp.logger.Fatal("stopping server because of an unrecoverable error", elog.FieldErr(originErr))
-		cmp.Stop()
-
-		err := cmp.closeConsumer(consumer)
-		if err != nil {
-			return fmt.Errorf("exiting due to an unrecoverable error, but encountered an error while closing consumer: %w", err)
-		}
-		return originErr
 	}
 }
 
