@@ -1,4 +1,4 @@
-package consumerserver
+package ekafka
 
 import "errors"
 

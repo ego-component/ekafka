@@ -288,7 +288,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 				cmp.consumptionErrors <- err
 
 				// If it's a retryable error, we should execute the handler again.
-				if errors.Is(err, ErrRecoverableError) && retryCount < maxOnEachMessageHandlerRetryCount {
+				if errors.Is(err, ekafka.ErrRecoverableError) && retryCount < maxOnEachMessageHandlerRetryCount {
 					retryCount++
 					goto HANDLER
 				}
@@ -374,13 +374,13 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			}
 
 			if err != nil {
-				if errors.Is(err, ErrDoNotCommit) {
+				if errors.Is(err, ekafka.ErrDoNotCommit) {
 					cmp.logger.Debug("skipping commit message due to NotCommit error", elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 					continue
 				}
 
 				// If it's a retryable error, we should execute the handler again.
-				if errors.Is(err, ErrRecoverableError) && retryCount < maxOnEachMessageHandlerRetryCount {
+				if errors.Is(err, ekafka.ErrRecoverableError) && retryCount < maxOnEachMessageHandlerRetryCount {
 					cmp.logger.Warn("encountered an error while handling message, will retry handling it", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 					retryCount++
 					goto HANDLER
