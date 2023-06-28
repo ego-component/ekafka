@@ -136,7 +136,12 @@ func accessClientInterceptor(compName string, c *config, logger *elog.Component)
 				if c.EnableAccessInterceptorRes {
 					fields = append(fields, elog.Any("res", json.RawMessage(xstring.JSON(cmd.res))))
 				}
-				logger.Info("access", fields...)
+				if err != nil {
+					fields = append(fields, elog.FieldErr(err))
+					logger.Error("access", fields...)
+				} else {
+					logger.Info("access", fields...)
+				}
 			}
 
 			if !eapp.IsDevelopmentMode() {
