@@ -355,9 +355,6 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			now := time.Now()
 			message, fetchCtx, err := consumer.FetchMessage(cmp.ServerCtx)
 			if err != nil {
-				if cmp.consumptionErrors != nil {
-					cmp.consumptionErrors <- err
-				}
 				cmp.logger.Error("encountered an error while fetching message", elog.FieldErr(err))
 
 				// try to fetch message again.
