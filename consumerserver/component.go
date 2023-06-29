@@ -44,6 +44,7 @@ type Component struct {
 	logger                      *elog.Component
 	mode                        consumptionMode
 	onEachMessageHandler        OnEachMessageHandler
+	onConsumeEachMessageHandler OnConsumeEachMessageHandler
 	onConsumerStartHandler      OnStartHandler
 	onConsumerGroupStartHandler OnConsumerGroupStartHandler
 	consumptionErrors           chan<- error
@@ -121,9 +122,9 @@ func (cmp *Component) OnEachMessage(consumptionErrors chan<- error, handler OnEa
 
 // OnConsumeEachMessage register a handler for each message. When the handler returns an error, the message will be
 // retried if the error is ErrRecoverableError else the message will not be committed.
-func (cmp *Component) OnConsumeEachMessage(handler OnEachMessageHandler) error {
+func (cmp *Component) OnConsumeEachMessage(handler OnConsumeEachMessageHandler) error {
 	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
-	cmp.onEachMessageHandler = handler
+	cmp.onConsumeEachMessageHandler = handler
 	return nil
 }
 
@@ -337,7 +338,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 
 func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 	consumer := cmp.Consumer()
-	if cmp.onEachMessageHandler == nil {
+	if cmp.onConsumeEachMessageHandler == nil {
 		return errors.New("you must define a MessageHandler first")
 	}
 
@@ -364,7 +365,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			msgId := fmt.Sprintf("%s_%d_%d", consumer.Config.Topic, message.Partition, message.Offset)
 
 		HANDLER:
-			err = cmp.onEachMessageHandler(fetchCtx, message)
+			err = cmp.onConsumeEachMessageHandler(fetchCtx, &message)
 			// Record the redis time-consuming
 			emetric.ClientHandleHistogram.WithLabelValues("kafka", compNameTopic, "HANDLER", brokers).Observe(time.Since(now).Seconds())
 			if err != nil {
