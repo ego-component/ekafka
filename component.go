@@ -43,15 +43,13 @@ func (cmp *Component) interceptorServerChain() func(oldProcess serverProcessFn) 
 // Producer 返回指定名称的kafka Producer
 func (cmp *Component) Producer(name string) *Producer {
 	cmp.producerMu.RLock()
-
 	if producer, ok := cmp.producers[name]; ok {
 		cmp.producerMu.RUnlock()
 		return producer
 	}
-
 	cmp.producerMu.RUnlock()
-	cmp.producerMu.Lock()
 
+	cmp.producerMu.Lock()
 	if producer, ok := cmp.producers[name]; ok {
 		cmp.producerMu.Unlock()
 		return producer
@@ -68,31 +66,18 @@ func (cmp *Component) Producer(name string) *Producer {
 	balancer, ok := cmp.config.balancers[config.Balancer]
 	if !ok {
 		cmp.producerMu.Unlock()
-		panic(fmt.Sprintf(
-			"producer.Balancer is not in registered balancers, %s, %v",
-			config.Balancer,
-			cmp.config.balancers,
-		))
+		panic(fmt.Sprintf("producer.Balancer is not in registered balancers, %s, %v", config.Balancer, cmp.config.balancers))
 	}
 
 	mechanism, err := NewMechanism(cmp.config.SASLMechanism, cmp.config.SASLUserName, cmp.config.SASLPassword)
 	if err != nil {
 		cmp.producerMu.Unlock()
-		cmp.logger.Panic(
-			"create mechanism error",
-			elog.String("mechanism", cmp.config.SASLMechanism),
-			elog.String("errorDetail", err.Error()),
-		)
+		cmp.logger.Panic("create mechanism error", elog.String("mechanism", cmp.config.SASLMechanism), elog.String("errorDetail", err.Error()))
 	}
 
 	var transport *kafka.Transport
 	if mechanism != nil {
-		cmp.logger.Debug(
-			"new transport with sasl mechanism",
-			elog.String("mechanism", cmp.config.SASLMechanism),
-			elog.String("username", cmp.config.SASLUserName),
-			elog.String("password", cmp.config.SASLPassword),
-		)
+		cmp.logger.Debug("new transport with sasl mechanism", elog.String("mechanism", cmp.config.SASLMechanism), elog.String("username", cmp.config.SASLUserName), elog.String("password", cmp.config.SASLPassword))
 		cmp.newProducerSASLTransport(transport, mechanism)
 	}
 
@@ -128,24 +113,20 @@ func (cmp *Component) Producer(name string) *Producer {
 	}
 	producer.setProcessor(cmp.interceptorClientChain())
 	cmp.producers[name] = producer
-
 	cmp.producerMu.Unlock()
-
 	return cmp.producers[name]
 }
 
 // Consumer 返回指定名称的kafka Consumer
 func (cmp *Component) Consumer(name string) *Consumer {
 	cmp.consumerMu.RLock()
-
 	if consumer, ok := cmp.consumers[name]; ok {
 		cmp.consumerMu.RUnlock()
 		return consumer
 	}
-
 	cmp.consumerMu.RUnlock()
-	cmp.consumerMu.Lock()
 
+	cmp.consumerMu.Lock()
 	if consumer, ok := cmp.consumers[name]; ok {
 		cmp.consumerMu.Unlock()
 		return consumer
@@ -220,20 +201,17 @@ func (cmp *Component) Consumer(name string) *Consumer {
 // ConsumerGroup 返回指定名称的 ConsumerGroup
 func (cmp *Component) ConsumerGroup(name string) *ConsumerGroup {
 	cmp.consumerGroupMu.RLock()
-
 	if consumerGroup, ok := cmp.consumerGroups[name]; ok {
 		cmp.consumerGroupMu.RUnlock()
 		return consumerGroup
 	}
-
 	cmp.consumerGroupMu.RUnlock()
-	cmp.consumerGroupMu.Lock()
 
+	cmp.consumerGroupMu.Lock()
 	if consumerGroup, ok := cmp.consumerGroups[name]; ok {
 		cmp.consumerGroupMu.Unlock()
 		return consumerGroup
 	}
-
 	config, ok := cmp.config.ConsumerGroups[name]
 	if !ok {
 		cmp.consumerGroupMu.Unlock()

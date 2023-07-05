@@ -37,7 +37,6 @@ func cmdWithRes(res interface{}) cmdOptsFunc {
 
 func logCmd(logMode bool, c *cmd, name string, opts ...cmdOptsFunc) {
 	c.name = name
-
 	for _, opt := range opts {
 		opt(logMode, c)
 	}
