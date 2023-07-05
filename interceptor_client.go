@@ -148,12 +148,12 @@ func accessClientInterceptor(compName string, c *config, logger *elog.Component)
 				return err
 			}
 			if err != nil {
-				log.Println("[ekafka.response]", xdebug.MakeReqAndResError(fileClientWithLineNum(), compName,
-					fmt.Sprintf("%v", c.Brokers), cost, fmt.Sprintf("%s %v", cmd.name, xstring.JSON(msgs.ToLog())), err.Error()),
+				log.Println("[ekafka.response]", xdebug.MakeReqAndResError(fileClientWithLineNum(), compName, fmt.Sprintf("%v", c.Brokers),
+					cost, fmt.Sprintf("%s %s %v", cmd.name, cmd.msg.Topic, xstring.JSON(msgs.ToLog())), err.Error()),
 				)
 			} else {
-				log.Println("[ekafka.response]", xdebug.MakeReqAndResInfo(fileClientWithLineNum(), compName,
-					fmt.Sprintf("%v", c.Brokers), cost, fmt.Sprintf("%s %v", cmd.name, xstring.JSON(msgs.ToLog())), fmt.Sprintf("%v", cmd.res)),
+				log.Println("[ekafka.response]", xdebug.MakeReqAndResInfo(fileClientWithLineNum(), compName, fmt.Sprintf("%v", c.Brokers),
+					cost, fmt.Sprintf("%s %s %v", cmd.name, cmd.msg.Topic, xstring.JSON(msgs.ToLog())), fmt.Sprintf("%v", cmd.res)),
 				)
 			}
 			return err

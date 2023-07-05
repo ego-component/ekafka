@@ -137,12 +137,12 @@ func accessServerInterceptor(compName string, c *config, logger *elog.Component)
 				return err
 			}
 			if err != nil {
-				log.Println("[ekafka.response]", xdebug.MakeReqAndResError(fileServerWithLineNum(), compName,
-					fmt.Sprintf("%v", c.Brokers), cost, fmt.Sprintf("%s %v", cmd.name, xstring.JSON(msgs.ToLog())), err.Error()),
+				log.Println("[ekafka.response]", xdebug.MakeReqAndResError(fileServerWithLineNum(), compName, fmt.Sprintf("%v", c.Brokers),
+					cost, fmt.Sprintf("%s %s %v", cmd.name, cmd.msg.Topic, xstring.JSON(msgs.ToLog())), err.Error()),
 				)
 			} else {
-				log.Println("[ekafka.response]", xdebug.MakeReqAndResInfo(fileServerWithLineNum(), compName,
-					fmt.Sprintf("%v", c.Brokers), cost, fmt.Sprintf("%s %v", cmd.name, xstring.JSON(msgs.ToLog())), xstring.JSON(messageToLog(cmd.msg))),
+				log.Println("[ekafka.response]", xdebug.MakeReqAndResInfo(fileServerWithLineNum(), compName, fmt.Sprintf("%v", c.Brokers),
+					cost, fmt.Sprintf("%s %s %v", cmd.name, cmd.msg.Topic, xstring.JSON(msgs.ToLog())), xstring.JSON(messageToLog(cmd.msg))),
 				)
 			}
 			return err
