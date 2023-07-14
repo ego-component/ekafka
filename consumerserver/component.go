@@ -44,6 +44,7 @@ type Component struct {
 	logger                      *elog.Component
 	mode                        consumptionMode
 	onEachMessageHandler        OnEachMessageHandler
+	onConsumeEachMessageHandler OnConsumeEachMessageHandler
 	onConsumerStartHandler      OnStartHandler
 	onConsumerGroupStartHandler OnConsumerGroupStartHandler
 	consumptionErrors           chan<- error
@@ -121,9 +122,9 @@ func (cmp *Component) OnEachMessage(consumptionErrors chan<- error, handler OnEa
 
 // OnConsumeEachMessage register a handler for each message. When the handler returns an error, the message will be
 // retried if the error is ErrRecoverableError else the message will not be committed.
-func (cmp *Component) OnConsumeEachMessage(handler OnEachMessageHandler) error {
+func (cmp *Component) OnConsumeEachMessage(handler OnConsumeEachMessageHandler) error {
 	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
-	cmp.onEachMessageHandler = handler
+	cmp.onConsumeEachMessageHandler = handler
 	return nil
 }
 
@@ -262,6 +263,10 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 			now := time.Now()
 			message, fetchCtx, err := consumer.FetchMessage(cmp.ServerCtx)
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					cmp.logger.Info("consumerServer is terminating...")
+					return
+				}
 				cmp.consumptionErrors <- err
 				cmp.logger.Error("encountered an error while fetching message", elog.FieldErr(err))
 
@@ -307,6 +312,10 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 			}
 
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					cmp.logger.Info("consumerServer is terminating...")
+					return
+				}
 				cmp.consumptionErrors <- err
 				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 
@@ -320,7 +329,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 	select {
 	case <-cmp.ServerCtx.Done():
 		rootErr := cmp.ServerCtx.Err()
-		cmp.logger.Error("terminating consumer because a context error", elog.FieldErr(rootErr))
+		cmp.logger.Info("terminating consumer because a context error", elog.FieldErr(rootErr))
 
 		err := cmp.closeConsumer(consumer)
 		if err != nil {
@@ -337,7 +346,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 
 func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 	consumer := cmp.Consumer()
-	if cmp.onEachMessageHandler == nil {
+	if cmp.onConsumeEachMessageHandler == nil {
 		return errors.New("you must define a MessageHandler first")
 	}
 
@@ -355,6 +364,10 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			now := time.Now()
 			message, fetchCtx, err := consumer.FetchMessage(cmp.ServerCtx)
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					cmp.logger.Info("consumerServer is terminating...")
+					return
+				}
 				cmp.logger.Error("encountered an error while fetching message", elog.FieldErr(err))
 
 				// try to fetch message again.
@@ -364,7 +377,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			msgId := fmt.Sprintf("%s_%d_%d", consumer.Config.Topic, message.Partition, message.Offset)
 
 		HANDLER:
-			err = cmp.onEachMessageHandler(fetchCtx, message)
+			err = cmp.onConsumeEachMessageHandler(fetchCtx, &message)
 			// Record the redis time-consuming
 			emetric.ClientHandleHistogram.WithLabelValues("kafka", compNameTopic, "HANDLER", brokers).Observe(time.Since(now).Seconds())
 			if err != nil {
@@ -401,6 +414,10 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			}
 
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					cmp.logger.Info("consumerServer is terminating...")
+					return
+				}
 				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 
 				// Try to commit this message again.
@@ -413,7 +430,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 	select {
 	case <-cmp.ServerCtx.Done():
 		rootErr := cmp.ServerCtx.Err()
-		cmp.logger.Error("terminating consumer because a context error", elog.FieldErr(rootErr))
+		cmp.logger.Info("terminating consumer because a context error", elog.FieldErr(rootErr))
 
 		err := cmp.closeConsumer(consumer)
 		if err != nil {
