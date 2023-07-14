@@ -263,6 +263,10 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 			now := time.Now()
 			message, fetchCtx, err := consumer.FetchMessage(cmp.ServerCtx)
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					cmp.logger.Info("consumerServer is terminating...")
+					return
+				}
 				cmp.consumptionErrors <- err
 				cmp.logger.Error("encountered an error while fetching message", elog.FieldErr(err))
 
@@ -308,6 +312,10 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 			}
 
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					cmp.logger.Info("consumerServer is terminating...")
+					return
+				}
 				cmp.consumptionErrors <- err
 				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 
@@ -321,7 +329,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 	select {
 	case <-cmp.ServerCtx.Done():
 		rootErr := cmp.ServerCtx.Err()
-		cmp.logger.Error("terminating consumer because a context error", elog.FieldErr(rootErr))
+		cmp.logger.Info("terminating consumer because a context error", elog.FieldErr(rootErr))
 
 		err := cmp.closeConsumer(consumer)
 		if err != nil {
@@ -356,6 +364,10 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			now := time.Now()
 			message, fetchCtx, err := consumer.FetchMessage(cmp.ServerCtx)
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					cmp.logger.Info("consumerServer is terminating...")
+					return
+				}
 				cmp.logger.Error("encountered an error while fetching message", elog.FieldErr(err))
 
 				// try to fetch message again.
@@ -402,6 +414,10 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			}
 
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					cmp.logger.Info("consumerServer is terminating...")
+					return
+				}
 				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 
 				// Try to commit this message again.
@@ -414,7 +430,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 	select {
 	case <-cmp.ServerCtx.Done():
 		rootErr := cmp.ServerCtx.Err()
-		cmp.logger.Error("terminating consumer because a context error", elog.FieldErr(rootErr))
+		cmp.logger.Info("terminating consumer because a context error", elog.FieldErr(rootErr))
 
 		err := cmp.closeConsumer(consumer)
 		if err != nil {
