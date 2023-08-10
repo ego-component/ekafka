@@ -2,6 +2,7 @@ package consumerserver
 
 import (
 	"context"
+
 	"github.com/ego-component/ekafka"
 	"github.com/segmentio/kafka-go"
 )

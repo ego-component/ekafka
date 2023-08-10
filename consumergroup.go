@@ -75,6 +75,7 @@ type ConsumerGroupOptions struct {
 	StartOffset            int64
 	RetentionTime          time.Duration
 	Reader                 readerOptions
+	EnableAutoRun          bool
 	logMode                bool
 }
 
@@ -101,13 +102,14 @@ func NewConsumerGroup(options ConsumerGroupOptions) (*ConsumerGroup, error) {
 	}
 
 	cg := &ConsumerGroup{
-		logger: options.Logger,
-		group:  group,
-		events: make(chan interface{}, 100),
-		//processor: defaultProcessor,
+		logger:  options.Logger,
+		group:   group,
+		events:  make(chan interface{}, 100),
 		options: &options,
 	}
-	go cg.run()
+	if options.EnableAutoRun {
+		go cg.run()
+	}
 
 	return cg, nil
 }

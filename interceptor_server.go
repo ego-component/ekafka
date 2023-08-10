@@ -92,12 +92,9 @@ func accessServerInterceptor(compName string, c *config, logger *elog.Component)
 				// // 通常是fetch message后，会将context 传递给 commit message，那么这个时候，就要从context里拿到对应的trace id。
 				// propagator := propagation.TraceContext{}
 				// propagator.Inject(ctx, carrier)
-				var (
-					span trace.Span
-				)
+				var span trace.Span
 				ctx, span = tracer.Start(ctx, "kafka", carrier, trace.WithAttributes(attrs...))
 				defer span.End()
-
 				span.SetAttributes(
 					semconv.MessagingDestinationKindKey.String(cmd.msg.Topic),
 				)
@@ -106,7 +103,6 @@ func accessServerInterceptor(compName string, c *config, logger *elog.Component)
 			cost := time.Since(ctx.Value(ctxStartTimeKey{}).(time.Time))
 			if c.EnableAccessInterceptor {
 				var fields = make([]elog.Field, 0, 10+len(loggerKeys))
-
 				fields = append(fields,
 					elog.FieldMethod(cmd.name),
 					elog.FieldCost(cost),

@@ -235,11 +235,8 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 		return errors.New("you must define a MessageHandler first")
 	}
 
-	var (
-		compNameTopic = fmt.Sprintf("%s.%s", cmp.ekafkaComponent.GetCompName(), consumer.Config.Topic)
-		brokers       = strings.Join(consumer.Brokers, ",")
-	)
-
+	compNameTopic := fmt.Sprintf("%s.%s", cmp.ekafkaComponent.GetCompName(), consumer.Config.Topic)
+	brokers := strings.Join(consumer.Brokers, ",")
 	unrecoverableError := make(chan error)
 	go func() {
 		for {

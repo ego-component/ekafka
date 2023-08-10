@@ -145,7 +145,6 @@ func (cmp *Component) Consumer(name string) *Consumer {
 			ReadBackoffMin:         config.ReadBackoffMin,
 			ReadBackoffMax:         config.ReadBackoffMax,
 		}),
-		//processor: defaultProcessor,
 		logMode: cmp.config.Debug,
 		Config:  config,
 		Brokers: cmp.config.Brokers,
@@ -153,7 +152,6 @@ func (cmp *Component) Consumer(name string) *Consumer {
 	}
 	consumer.setProcessor(cmp.interceptorServerChain())
 	cmp.consumers[name] = consumer
-
 	cmp.consumerMu.Unlock()
 
 	return cmp.consumers[name]
@@ -181,6 +179,11 @@ func (cmp *Component) ConsumerGroup(name string) *ConsumerGroup {
 		cmp.consumerGroupMu.Unlock()
 		cmp.logger.Panic("consumerGroup config not exists", elog.String("name", name))
 	}
+	// enableAutoRun 是否默认运行，默认值为true
+	var enableAutoRun = true
+	if config.EnableAutoRun != nil {
+		enableAutoRun = *config.EnableAutoRun
+	}
 	consumerGroup, err := NewConsumerGroup(ConsumerGroupOptions{
 		Logger:                 cmp.logger,
 		Brokers:                cmp.config.Brokers,
@@ -194,6 +197,7 @@ func (cmp *Component) ConsumerGroup(name string) *ConsumerGroup {
 		JoinGroupBackoff:       config.JoinGroupBackoff,
 		StartOffset:            config.StartOffset,
 		RetentionTime:          config.RetentionTime,
+		EnableAutoRun:          enableAutoRun,
 		Reader: readerOptions{
 			MinBytes:        config.MinBytes,
 			MaxBytes:        config.MaxBytes,
@@ -210,7 +214,6 @@ func (cmp *Component) ConsumerGroup(name string) *ConsumerGroup {
 	}
 	consumerGroup.wrapProcessor(cmp.interceptorClientChain())
 	cmp.consumerGroups[name] = consumerGroup
-
 	cmp.consumerGroupMu.Unlock()
 
 	return cmp.consumerGroups[name]
@@ -220,8 +223,7 @@ func (cmp *Component) ConsumerGroup(name string) *ConsumerGroup {
 func (cmp *Component) Client() *Client {
 	cmp.clientOnce.Do(func() {
 		cmp.client = &Client{
-			cc: &kafka.Client{Addr: kafka.TCP(cmp.config.Brokers...), Timeout: cmp.config.Client.Timeout},
-			//processor: defaultProcessor,
+			cc:      &kafka.Client{Addr: kafka.TCP(cmp.config.Brokers...), Timeout: cmp.config.Client.Timeout},
 			logMode: cmp.config.Debug,
 		}
 		cmp.client.wrapProcessor(cmp.interceptorClientChain())

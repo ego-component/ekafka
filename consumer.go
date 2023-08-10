@@ -34,6 +34,7 @@ type logMessage struct {
 	// writing the message.
 	Time time.Time
 }
+
 type logHeader struct {
 	Key   string
 	Value string

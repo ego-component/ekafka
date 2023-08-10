@@ -103,6 +103,7 @@ type consumerGroupConfig struct {
 	JoinGroupBackoff       time.Duration         `json:"joinGroupBackoff" toml:"joinGroupBackoff"`
 	StartOffset            int64                 `json:"startOffset" toml:"startOffset"`
 	RetentionTime          time.Duration         `json:"retentionTime" toml:"retentionTime"`
+	EnableAutoRun          *bool                 `json:"enableAutoRun" toml:"enableAutoRun"`
 	// Reader otpions:
 	MinBytes        int           `json:"minBytes" toml:"minBytes"`
 	MaxBytes        int           `json:"maxBytes" toml:"maxBytes"`
