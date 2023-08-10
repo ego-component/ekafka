@@ -74,15 +74,23 @@ type ConsumerGroupOptions struct {
 	JoinGroupBackoff       time.Duration
 	StartOffset            int64
 	RetentionTime          time.Duration
+	Timeout                time.Duration
 	Reader                 readerOptions
 	EnableAutoRun          bool
 	logMode                bool
+	SASLUserName           string
+	SASLPassword           string
+	SASLMechanism          string
 }
 
 func NewConsumerGroup(options ConsumerGroupOptions) (*ConsumerGroup, error) {
 	logger := newKafkaLogger(options.Logger)
 	errorLogger := newKafkaErrorLogger(options.Logger)
-	group, err := kafka.NewConsumerGroup(kafka.ConsumerGroupConfig{
+	mechanism, err := NewMechanism(options.SASLMechanism, options.SASLUserName, options.SASLPassword)
+	if err != nil {
+		return nil, err
+	}
+	readerConfig := kafka.ConsumerGroupConfig{
 		Brokers:                options.Brokers,
 		ID:                     options.GroupID,
 		Topics:                 []string{options.Topic},
@@ -94,9 +102,18 @@ func NewConsumerGroup(options ConsumerGroupOptions) (*ConsumerGroup, error) {
 		JoinGroupBackoff:       options.JoinGroupBackoff,
 		StartOffset:            options.StartOffset,
 		RetentionTime:          options.RetentionTime,
+		Timeout:                options.Timeout,
 		Logger:                 logger,
 		ErrorLogger:            errorLogger,
-	})
+	}
+	if mechanism != nil {
+		dialer := &kafka.Dialer{
+			DualStack:     true,
+			SASLMechanism: mechanism,
+		}
+		readerConfig.Dialer = dialer
+	}
+	group, err := kafka.NewConsumerGroup(readerConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -161,21 +178,35 @@ func (cg *ConsumerGroup) run() {
 
 			logger := newKafkaLogger(cg.logger)
 			errorLogger := newKafkaErrorLogger(cg.logger)
+			mechanism, err := NewMechanism(cg.options.SASLMechanism, cg.options.SASLUserName, cg.options.SASLPassword)
+			if err != nil {
+				logger.Panic("create mechanism error", elog.String("mechanism", cg.options.SASLMechanism), elog.String("errorDetail", err.Error()))
+			}
+
+			readerConfig := kafka.ReaderConfig{
+				Brokers:         cg.options.Brokers,
+				Topic:           cg.options.Topic,
+				Partition:       partition,
+				MinBytes:        cg.options.Reader.MinBytes,
+				MaxBytes:        cg.options.Reader.MaxBytes,
+				MaxWait:         cg.options.Reader.MaxWait,
+				ReadLagInterval: cg.options.Reader.ReadLagInterval,
+				Logger:          logger,
+				ErrorLogger:     errorLogger,
+				CommitInterval:  cg.options.Reader.CommitInterval,
+				ReadBackoffMin:  cg.options.Reader.ReadBackoffMin,
+				ReadBackoffMax:  cg.options.Reader.ReadBackoffMax,
+			}
+
+			if mechanism != nil {
+				dialer := &kafka.Dialer{
+					DualStack:     true,
+					SASLMechanism: mechanism,
+				}
+				readerConfig.Dialer = dialer
+			}
 			gen.Start(func(ctx context.Context) {
-				reader := kafka.NewReader(kafka.ReaderConfig{
-					Brokers:         cg.options.Brokers,
-					Topic:           cg.options.Topic,
-					Partition:       partition,
-					MinBytes:        cg.options.Reader.MinBytes,
-					MaxBytes:        cg.options.Reader.MaxBytes,
-					MaxWait:         cg.options.Reader.MaxWait,
-					ReadLagInterval: cg.options.Reader.ReadLagInterval,
-					Logger:          logger,
-					ErrorLogger:     errorLogger,
-					CommitInterval:  cg.options.Reader.CommitInterval,
-					ReadBackoffMin:  cg.options.Reader.ReadBackoffMin,
-					ReadBackoffMax:  cg.options.Reader.ReadBackoffMax,
-				})
+				reader := kafka.NewReader(readerConfig)
 				defer reader.Close()
 
 				// seek to the last committed offset for this partition.

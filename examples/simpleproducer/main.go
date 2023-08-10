@@ -7,8 +7,9 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/ego-component/ekafka"
 	"github.com/gotomicro/ego/core/econf"
+
+	"github.com/ego-component/ekafka"
 )
 
 // produce 生产消息
@@ -17,11 +18,18 @@ func main() {
 	conf := `
 [kafka]
 	debug=true
-	brokers=["localhost:9091","localhost:9092","localhost:9093"]
+	brokers=["localhost:9093"]
+    [kafka.authentication]
+        [kafka.authentication.tls]
+            enabled=false
+            CAFile=""
+            CertFile=""
+            KeyFile=""
+            InsecureSkipVerify=true
 	[kafka.client]
 		timeout="3s"
 	[kafka.producers.p1]        # 定义了名字为 p1 的 producer
-		topic="sre-infra-test"  # 指定生产消息的 topic
+		topic="sre-infra-test"  # 指定生产消息的 topic 
 `
 	// 加载配置文件
 	err := econf.LoadFromReader(strings.NewReader(conf), toml.Unmarshal)

@@ -136,19 +136,24 @@ func accessClientInterceptor(compName string, c *config, logger *elog.Component)
 				if c.EnableAccessInterceptorRes {
 					fields = append(fields, elog.Any("res", json.RawMessage(xstring.JSON(cmd.res))))
 				}
-				logger.Info("access", fields...)
+				if err != nil {
+					fields = append(fields, elog.FieldErr(err))
+					logger.Error("access", fields...)
+				} else {
+					logger.Info("access", fields...)
+				}
 			}
 
 			if !eapp.IsDevelopmentMode() {
 				return err
 			}
 			if err != nil {
-				log.Println("[ekafka.response]", xdebug.MakeReqAndResError(fileClientWithLineNum(), compName,
-					fmt.Sprintf("%v", c.Brokers), cost, fmt.Sprintf("%s %v", cmd.name, xstring.JSON(msgs.ToLog())), err.Error()),
+				log.Println("[ekafka.response]", xdebug.MakeReqAndResError(fileClientWithLineNum(), compName, fmt.Sprintf("%v", c.Brokers),
+					cost, fmt.Sprintf("%s %s %v", cmd.name, cmd.msg.Topic, xstring.JSON(msgs.ToLog())), err.Error()),
 				)
 			} else {
-				log.Println("[ekafka.response]", xdebug.MakeReqAndResInfo(fileClientWithLineNum(), compName,
-					fmt.Sprintf("%v", c.Brokers), cost, fmt.Sprintf("%s %v", cmd.name, xstring.JSON(msgs.ToLog())), fmt.Sprintf("%v", cmd.res)),
+				log.Println("[ekafka.response]", xdebug.MakeReqAndResInfo(fileClientWithLineNum(), compName, fmt.Sprintf("%v", c.Brokers),
+					cost, fmt.Sprintf("%s %s %v", cmd.name, cmd.msg.Topic, xstring.JSON(msgs.ToLog())), fmt.Sprintf("%v", cmd.res)),
 				)
 			}
 			return err

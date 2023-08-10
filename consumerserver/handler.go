@@ -10,6 +10,9 @@ import (
 // OnEachMessageHandler ...
 type OnEachMessageHandler = func(ctx context.Context, message kafka.Message) error
 
+// OnConsumeEachMessageHandler ...
+type OnConsumeEachMessageHandler = func(ctx context.Context, message *ekafka.Message) error
+
 // OnStartHandler ...
 type OnStartHandler = func(ctx context.Context, consumer *ekafka.Consumer) error
 

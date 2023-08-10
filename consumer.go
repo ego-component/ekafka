@@ -7,6 +7,8 @@ import (
 	"github.com/gotomicro/ego/core/etrace"
 	"github.com/gotomicro/ego/core/transport"
 	"github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // Consumer 消费者/消费者组，
@@ -160,5 +162,11 @@ func (r *Consumer) getCtx(ctx context.Context, msg Message) context.Context {
 			}
 		}
 	}
-	return ctx
+	// 注入 trace 信息
+	carrier := propagation.MapCarrier{}
+	// 首先看header头里，也就是从producer里传递的trace id
+	for _, value := range msg.Headers {
+		carrier[value.Key] = string(value.Value)
+	}
+	return otel.GetTextMapPropagator().Extract(ctx, carrier)
 }

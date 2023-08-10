@@ -8,12 +8,14 @@
 ## Table of contents
 
 - [基本组件](#基本组件)
-	- [快速上手](#快速上手)
+    - [快速上手](#快速上手)
 - [ConsumerGroup](#ConsumerGroup)
 - [Consumer Server 组件](#Consumer-Server-组件)
 - [Producer](#Producer)
+- [Compression](#Compression)
+- [SASL Support](#SASL-Support)
 - [测试](#测试)
-	- [E2E 测试](#E2E-测试)
+    - [E2E 测试](#E2E-测试)
 
 ## 注意事项
 如果生产、消费kafka比较慢，并不一定是kafka慢，而是你的配置不正确，请认真查看文档：https://github.com/segmentio/kafka-go/issues/417
@@ -155,6 +157,16 @@ startOffset = "-2"
 #
 # Default: -1
 retentionTime = "-1"
+# Timeout is the network timeout used when communicating with the consumer
+# group coordinator.  This value should not be too small since errors
+# communicating with the broker will generally cause a consumer group
+# rebalance, and it's undesirable that a transient network error intoduce
+# that overhead.  Similarly, it should not be too large or the consumer
+# group may be slow to respond to the coordinator failing over to another
+# broker.
+#
+# Default: 5s
+timeout = "5s"
 # MinBytes indicates to the broker the minimum batch size that the consumer
 # will accept. Setting a high minimum when consuming from a low-volume topic
 # may result in delayed delivery when the broker does not have enough data to
@@ -462,6 +474,74 @@ func main() {
 	fmt.Println(`produce message success --------------->`)
 }
 ```
+
+## TLS 配置
+
+```toml
+[kafka]
+	debug=true
+	brokers=["localhost:9091","localhost:9092","localhost:9093"]
+    [kafka.authentication]
+        [kafka.authentication.tls]
+            enabled=false
+            CAFile=""
+            CertFile="./cert/tls.pem"
+            KeyFile="./cert/tls.key"
+            InsecureSkipVerify=true
+	[kafka.client]
+		timeout="3s"
+	[kafka.producers.p1]        # 定义了名字为 p1 的 producer
+		topic="sre-infra-test"  # 指定生产消息的 topic
+```
+
+## Compression
+
+以下是压缩的相关配置
+```toml
+[kafka]
+	brokers=["localhost:9091","localhost:9092","localhost:9093"]
+	[kafka.client]
+		timeout="3s"
+	[kafka.producers.p1]        # 定义了名字为 p1 的 producer
+		topic="test_topic"        # 指定生产消息的 topic
+		compression=1 #指定压缩类型
+```
+目前支持的compression如下：
+
+| 配置值 | 说明  |
+| ------ | --------|
+|  1     | Gzip   |
+|  2     | Snappy |
+|  3     | Lz4 |
+|  4     | Zstd |
+
+
+## SASL Support
+
+以下是相关配置样例
+
+```toml
+[kafka]
+	debug=true
+	brokers=["localhost:9091","localhost:9092","localhost:9093"]
+	saslMechanism="PLAIN" #SASL Authentication Types
+	saslUserName="username" #用户名
+	saslPassword="password" #密码
+	[kafka.client]
+        timeout="3s"
+	[kafka.producers.p1]
+		topic="sre-infra-test"
+	[kafka.consumers.c1]
+		topic="sre-infra-test"
+		groupID="group-1"
+```
+saslMechanism 相关配置枚举如下：
+
+| 配置值 | 说明  |
+| ---------------- | ------------|
+|  PLAIN           | Plain       |
+|  SCRAM-SHA-256   | Scram       |
+|  SCRAM-SHA-512   | Scram       |
 
 ## 测试
 
