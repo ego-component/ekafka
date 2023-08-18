@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -310,7 +311,11 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
-					cmp.logger.Info("consumerServer is terminating...")
+					cmp.logger.Info("consumerServer is terminating... will retry to commit message using background context")
+					fetchCtx = context.Background()
+					goto COMMIT
+				}
+				if errors.Is(err, io.ErrClosedPipe) && cmp.ServerCtx.Err() != nil {
 					return
 				}
 				cmp.consumptionErrors <- err
@@ -412,7 +417,11 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
-					cmp.logger.Info("consumerServer is terminating...")
+					cmp.logger.Info("consumerServer is terminating... will retry to commit message using background context")
+					fetchCtx = context.Background()
+					goto COMMIT
+				}
+				if errors.Is(err, io.ErrClosedPipe) && cmp.ServerCtx.Err() != nil {
 					return
 				}
 				cmp.logger.Error("encountered an error while committing message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
