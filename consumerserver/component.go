@@ -44,10 +44,9 @@ type Component struct {
 	ekafkaComponent             *ekafka.Component
 	logger                      *elog.Component
 	mode                        consumptionMode
-	onEachMessageHandler        OnEachMessageHandler
-	onConsumeEachMessageHandler OnConsumeEachMessageHandler
 	onConsumerStartHandler      OnStartHandler
 	onConsumerGroupStartHandler OnConsumerGroupStartHandler
+	listeners                   listeners
 	consumptionErrors           chan<- error
 }
 
@@ -117,7 +116,7 @@ func (cmp *Component) ConsumerGroup() *ekafka.ConsumerGroup {
 func (cmp *Component) OnEachMessage(consumptionErrors chan<- error, handler OnEachMessageHandler) error {
 	cmp.consumptionErrors = consumptionErrors
 	cmp.mode = consumptionModeOnConsumerEachMessage
-	cmp.onEachMessageHandler = handler
+	cmp.listeners = listeners{listenerWrapper{onEachMessageHandler: handler}}
 	return nil
 }
 
@@ -125,8 +124,14 @@ func (cmp *Component) OnEachMessage(consumptionErrors chan<- error, handler OnEa
 // retried if the error is ErrRecoverableError else the message will not be committed.
 func (cmp *Component) OnConsumeEachMessage(handler OnConsumeEachMessageHandler) error {
 	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
-	cmp.onConsumeEachMessageHandler = handler
+	cmp.listeners = listeners{listenerWrapper{onConsumeEachMessageHandler: handler}}
 	return nil
+}
+
+// Subscribe append a handler for each message.
+func (cmp *Component) Subscribe(listener Listener) {
+	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
+	cmp.listeners = append(cmp.listeners, listener)
 }
 
 // OnStart ...
@@ -246,7 +251,7 @@ func (cmp *Component) launchOnConsumerStart() error {
 
 func (cmp *Component) launchOnConsumerEachMessage() error {
 	consumer := cmp.Consumer()
-	if cmp.onEachMessageHandler == nil {
+	if len(cmp.listeners) == 0 {
 		return errors.New("you must define a MessageHandler first")
 	}
 
@@ -271,12 +276,9 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 				// try to fetch message again.
 				continue
 			}
-			retryCount := 0
 			msgId := fmt.Sprintf("%s_%d_%d", consumer.Config.Topic, message.Partition, message.Offset)
 
-		HANDLER:
-
-			err = cmp.onEachMessageHandler(fetchCtx, message)
+			err = cmp.listeners.Dispatch(fetchCtx, &message)
 			cmp.PackageName()
 			// Record the redis time-consuming
 			emetric.ClientHandleHistogram.WithLabelValues("kafka", compNameTopic, "HANDLER", brokers).Observe(time.Since(now).Seconds())
@@ -290,11 +292,6 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 				cmp.logger.Error("encountered an error while handling message", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 				cmp.consumptionErrors <- err
 
-				// If it's a retryable error, we should execute the handler again.
-				if errors.Is(err, ekafka.ErrRecoverableError) && retryCount < maxOnEachMessageHandlerRetryCount {
-					retryCount++
-					goto HANDLER
-				}
 				continue
 			}
 
@@ -348,7 +345,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 
 func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 	consumer := cmp.Consumer()
-	if cmp.onConsumeEachMessageHandler == nil {
+	if len(cmp.listeners) == 0 {
 		return errors.New("you must define a MessageHandler first")
 	}
 
@@ -375,14 +372,12 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 				// try to fetch message again.
 				continue
 			}
-			retryCount := 0
 			msgId := fmt.Sprintf("%s_%d_%d", consumer.Config.Topic, message.Partition, message.Offset)
 
-		HANDLER:
-			err = cmp.onConsumeEachMessageHandler(fetchCtx, &message)
+			err = cmp.listeners.Dispatch(fetchCtx, &message)
 			// Record the redis time-consuming
 			emetric.ClientHandleHistogram.WithLabelValues("kafka", compNameTopic, "HANDLER", brokers).Observe(time.Since(now).Seconds())
-			if err != nil {
+			if err != nil && !errors.Is(err, ekafka.ErrDoNotCommit) {
 				emetric.ClientHandleCounter.Inc("kafka", compNameTopic, "HANDLER", brokers, "Error")
 			} else {
 				emetric.ClientHandleCounter.Inc("kafka", compNameTopic, "HANDLER", brokers, "OK")
@@ -394,12 +389,6 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 					continue
 				}
 
-				// If it's a retryable error, we should execute the handler again.
-				if errors.Is(err, ekafka.ErrRecoverableError) && retryCount < maxOnEachMessageHandlerRetryCount {
-					cmp.logger.Warn("encountered an error while handling message, will retry handling it", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
-					retryCount++
-					goto HANDLER
-				}
 				// Otherwise should be considered as skipping commit message.
 				cmp.logger.Error("skipping commit message due to an error", elog.FieldErr(err), elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 				continue
