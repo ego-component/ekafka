@@ -134,6 +134,19 @@ func (cmp *Component) Subscribe(listener Listener) {
 	cmp.listeners = append(cmp.listeners, listener)
 }
 
+// SubscribeSingleHandler append a single listener with this handler for each message
+func (cmp *Component) SubscribeSingleHandler(handler Handler) {
+	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
+	cmp.listeners = append(cmp.listeners, NewListener(handler))
+}
+
+// SubscribeBatchHandler append a batch listener with this handler for each message. A batch messages will be handled when
+// batch size or timeout reached
+func (cmp *Component) SubscribeBatchHandler(handler BatchHandler, batchSize int, timeout time.Duration) {
+	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
+	cmp.listeners = append(cmp.listeners, NewBatchListener(handler, batchSize, timeout))
+}
+
 // OnStart ...
 func (cmp *Component) OnStart(handler OnStartHandler) error {
 	cmp.mode = consumptionModeOnConsumerStart
