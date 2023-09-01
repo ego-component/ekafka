@@ -22,12 +22,12 @@ type Listener interface {
 
 type listeners []Listener
 
-func (l listeners) Dispatch(ctx context.Context, message *ekafka.Message) (err error) {
+func (l listeners) dispatch(ctx context.Context, message *ekafka.Message, logger *elog.Component) (err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			var buf [4096]byte
 			n := runtime.Stack(buf[:], false)
-			elog.Error("kafka_handle_panic", zap.String("stack", string(buf[:n])))
+			logger.Error("kafka_handle_panic", elog.FieldCtxTid(ctx), zap.String("stack", string(buf[:n])))
 		}
 	}()
 
@@ -49,7 +49,7 @@ func (l listeners) Dispatch(ctx context.Context, message *ekafka.Message) (err e
 				goto HANDLER
 			}
 			errs = append(errs, err)
-			elog.Error("kafka consumer handle error", elog.FieldErr(err), elog.String("tag", "kafka_consumer"), elog.String("topic", message.Topic), elog.String("partition", fmt.Sprintf("%d", message.Partition)), elog.String("offset", fmt.Sprintf("%d", message.Offset)))
+			logger.Error("kafka consumer handle error", elog.FieldCtxTid(ctx), elog.FieldErr(err), elog.String("tag", "kafka_consumer"), elog.String("topic", message.Topic), elog.String("partition", fmt.Sprintf("%d", message.Partition)), elog.String("offset", fmt.Sprintf("%d", message.Offset)))
 		}
 		if commitOffset {
 			commitCount++
@@ -76,11 +76,13 @@ func (e consumerErrors) Error() string {
 
 type SyncListener struct {
 	Handler Handler
+	logger  *elog.Component
 }
 
-func NewListener(handler Handler) Listener {
+func (cmp *Component) NewListener(handler Handler) Listener {
 	return &SyncListener{
 		Handler: handler,
+		logger:  cmp.logger,
 	}
 }
 
@@ -99,26 +101,28 @@ type BatchListener struct {
 	BatchUpdateSize int
 	Timeout         time.Duration
 	Handler         BatchHandler
+	logger          *elog.Component
 }
 
-func NewBatchListener(handler BatchHandler, batchUpdateSize int, timeout time.Duration) Listener {
+func (cmp *Component) NewBatchListener(handler BatchHandler, batchUpdateSize int, timeout time.Duration) Listener {
 	return &BatchListener{
 		Handler:         handler,
 		Batch:           make([]*ekafka.Message, 0, batchUpdateSize),
 		BatchUpdateSize: batchUpdateSize,
 		Timeout:         timeout,
+		logger:          cmp.logger,
 	}
 }
 
 func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message) (bool, error) {
 	l.Batch = append(l.Batch, message)
-	elog.Info("kafka_consumer_batch", elog.Any("batch_len", len(l.Batch)), elog.Any("time_since", time.Since(l.Batch[0].Time)))
+	l.logger.Info("kafka_consumer_batch", elog.FieldCtxTid(ctx), elog.Int("batch_len", len(l.Batch)), elog.Duration("time_since", time.Since(l.Batch[0].Time)))
 
 	var err error
 	var storeOffset bool
 	if l.BatchUpdateSize > 0 && len(l.Batch) >= l.BatchUpdateSize {
 		if err = l.Handler(ctx, l.Batch[:l.BatchUpdateSize]); err != nil {
-			elog.Error("batch_handle_message_fail", zap.Int("batch_len", len(l.Batch)))
+			l.logger.Error("batch_handle_message_fail", elog.FieldCtxTid(ctx), zap.Int("batch_len", len(l.Batch)))
 			return false, err
 		}
 		copy(l.Batch, l.Batch[l.BatchUpdateSize:])
@@ -126,7 +130,7 @@ func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message) (bo
 		storeOffset = true
 	} else if len(l.Batch) > 0 && time.Since(l.Batch[0].Time) >= l.Timeout {
 		if err = l.Handler(ctx, l.Batch); err != nil {
-			elog.Error("batch_handle_message_fail", zap.Int("batch_len", len(l.Batch)), zap.Int64("time", l.Batch[0].Time.Unix()))
+			l.logger.Error("batch_handle_message_fail", elog.FieldCtxTid(ctx), zap.Int("batch_len", len(l.Batch)), zap.Int64("time", l.Batch[0].Time.Unix()))
 			return false, err
 		}
 
