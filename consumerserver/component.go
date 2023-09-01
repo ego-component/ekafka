@@ -137,14 +137,14 @@ func (cmp *Component) Subscribe(listener Listener) {
 // SubscribeSingleHandler append a single listener with this handler for each message
 func (cmp *Component) SubscribeSingleHandler(handler Handler) {
 	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
-	cmp.listeners = append(cmp.listeners, NewListener(handler))
+	cmp.listeners = append(cmp.listeners, cmp.NewListener(handler))
 }
 
 // SubscribeBatchHandler append a batch listener with this handler for each message. A batch messages will be handled when
 // batch size or timeout reached
 func (cmp *Component) SubscribeBatchHandler(handler BatchHandler, batchSize int, timeout time.Duration) {
 	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
-	cmp.listeners = append(cmp.listeners, NewBatchListener(handler, batchSize, timeout))
+	cmp.listeners = append(cmp.listeners, cmp.NewBatchListener(handler, batchSize, timeout))
 }
 
 // OnStart ...
@@ -291,7 +291,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 			}
 			msgId := fmt.Sprintf("%s_%d_%d", consumer.Config.Topic, message.Partition, message.Offset)
 
-			err = cmp.listeners.Dispatch(fetchCtx, &message)
+			err = cmp.listeners.dispatch(fetchCtx, &message, cmp.logger)
 			cmp.PackageName()
 			// Record the redis time-consuming
 			emetric.ClientHandleHistogram.WithLabelValues("kafka", compNameTopic, "HANDLER", brokers).Observe(time.Since(now).Seconds())
@@ -387,8 +387,8 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			}
 			msgId := fmt.Sprintf("%s_%d_%d", consumer.Config.Topic, message.Partition, message.Offset)
 
-			err = cmp.listeners.Dispatch(fetchCtx, &message)
-			// Record the redis time-consuming
+			err = cmp.listeners.dispatch(fetchCtx, &message, cmp.logger)
+			// Record the redis kafka-consuming
 			emetric.ClientHandleHistogram.WithLabelValues("kafka", compNameTopic, "HANDLER", brokers).Observe(time.Since(now).Seconds())
 			if err != nil && !errors.Is(err, ekafka.ErrDoNotCommit) {
 				emetric.ClientHandleCounter.Inc("kafka", compNameTopic, "HANDLER", brokers, "Error")
@@ -409,7 +409,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 		COMMIT:
 			err = consumer.CommitMessages(fetchCtx, &message)
 
-			// Record the redis time-consuming
+			// Record the redis kafka-consuming
 			emetric.ClientHandleHistogram.WithLabelValues("kafka", compNameTopic, "COMMIT", brokers).Observe(time.Since(now).Seconds())
 			if err != nil {
 				emetric.ClientHandleCounter.Inc("kafka", compNameTopic, "COMMIT", brokers, "Error")
