@@ -79,7 +79,7 @@ type SyncListener struct {
 	logger  *elog.Component
 }
 
-func (cmp *Component) NewListener(handler Handler) Listener {
+func (cmp *Component) newListener(handler Handler) Listener {
 	return &SyncListener{
 		Handler: handler,
 		logger:  cmp.logger,
@@ -104,7 +104,7 @@ type BatchListener struct {
 	logger          *elog.Component
 }
 
-func (cmp *Component) NewBatchListener(handler BatchHandler, batchUpdateSize int, timeout time.Duration) Listener {
+func (cmp *Component) newBatchListener(handler BatchHandler, batchUpdateSize int, timeout time.Duration) Listener {
 	return &BatchListener{
 		Handler:         handler,
 		Batch:           make([]*ekafka.Message, 0, batchUpdateSize),
