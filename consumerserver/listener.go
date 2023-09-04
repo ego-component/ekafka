@@ -14,7 +14,7 @@ import (
 )
 
 type Handler func(ctx context.Context, message *ekafka.Message) error
-type BatchHandler func(ctx context.Context, messages []*ekafka.Message) error
+type BatchHandler func(messages []*ekafka.CtxMessage) error
 
 type Listener interface {
 	Handle(ctx context.Context, message *ekafka.Message) (bool, error)
@@ -97,7 +97,7 @@ func (l *SyncListener) Handle(ctx context.Context, message *ekafka.Message) (boo
 }
 
 type BatchListener struct {
-	Batch           []*ekafka.Message
+	Batch           []*ekafka.CtxMessage
 	BatchUpdateSize int
 	Timeout         time.Duration
 	Handler         BatchHandler
@@ -107,7 +107,7 @@ type BatchListener struct {
 func (cmp *Component) newBatchListener(handler BatchHandler, batchUpdateSize int, timeout time.Duration) Listener {
 	return &BatchListener{
 		Handler:         handler,
-		Batch:           make([]*ekafka.Message, 0, batchUpdateSize),
+		Batch:           make([]*ekafka.CtxMessage, 0, batchUpdateSize),
 		BatchUpdateSize: batchUpdateSize,
 		Timeout:         timeout,
 		logger:          cmp.logger,
@@ -115,13 +115,16 @@ func (cmp *Component) newBatchListener(handler BatchHandler, batchUpdateSize int
 }
 
 func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message) (bool, error) {
-	l.Batch = append(l.Batch, message)
+	l.Batch = append(l.Batch, &ekafka.CtxMessage{
+		Message: message,
+		Ctx:     ctx,
+	})
 	l.logger.Info("kafka_consumer_batch", elog.FieldCtxTid(ctx), elog.Int("batch_len", len(l.Batch)), elog.Duration("time_since", time.Since(l.Batch[0].Time)))
 
 	var err error
 	var storeOffset bool
 	if l.BatchUpdateSize > 0 && len(l.Batch) >= l.BatchUpdateSize {
-		if err = l.Handler(ctx, l.Batch[:l.BatchUpdateSize]); err != nil {
+		if err = l.Handler(l.Batch[:l.BatchUpdateSize]); err != nil {
 			l.logger.Error("batch_handle_message_fail", elog.FieldCtxTid(ctx), zap.Int("batch_len", len(l.Batch)))
 			return false, err
 		}
@@ -129,7 +132,7 @@ func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message) (bo
 		l.Batch = l.Batch[:len(l.Batch)-l.BatchUpdateSize]
 		storeOffset = true
 	} else if len(l.Batch) > 0 && time.Since(l.Batch[0].Time) >= l.Timeout {
-		if err = l.Handler(ctx, l.Batch); err != nil {
+		if err = l.Handler(l.Batch); err != nil {
 			l.logger.Error("batch_handle_message_fail", elog.FieldCtxTid(ctx), zap.Int("batch_len", len(l.Batch)), zap.Int64("time", l.Batch[0].Time.Unix()))
 			return false, err
 		}
