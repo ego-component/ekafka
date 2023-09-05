@@ -23,6 +23,11 @@ type Consumer struct {
 
 type Message = kafka.Message
 
+type CtxMessage = struct {
+	*kafka.Message
+	Ctx context.Context
+}
+
 type logMessage struct {
 	Topic         string
 	Partition     int
