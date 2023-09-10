@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go.uber.org/zap"
 	"log"
 	"runtime"
 	"strconv"
@@ -190,4 +191,44 @@ func fileClientWithLineNum() string {
 		}
 	}
 	return ""
+}
+
+func compressClientInterceptor(compName string, config *config, logger *elog.Component) ClientInterceptor {
+	return func(next clientProcessFn) clientProcessFn {
+		return func(ctx context.Context, messages Messages, c *cmd) error {
+			var err error
+			compressor := GetCompressor(config.CompressType)
+			if compressor == nil {
+				logger.Error("unknown compressor", zap.String("compName", compName), zap.String("compressType", config.CompressType))
+				// 找不到压缩器打印报错日志，不执行压缩
+				return next(ctx, messages, c)
+			}
+
+			for _, value := range messages {
+				// 超过阈值
+				if len(value.Value) > config.CompressLimit {
+					hasKey := false
+					for _, h := range value.Headers {
+						if h.Key == compressHeaderKey {
+							// 已经存在说明已压缩过 不再重复压缩
+							hasKey = true
+							break
+						}
+					}
+					if !hasKey {
+						value.Headers = append(value.Headers, kafka.Header{
+							Key:   compressHeaderKey,
+							Value: []byte(config.CompressType),
+						})
+						value.Value, err = compressor.Compress(value.Value)
+						if err != nil {
+							// 压缩有异常
+							return err
+						}
+					}
+				}
+			}
+			return next(ctx, messages, c)
+		}
+	}
 }

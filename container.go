@@ -53,6 +53,17 @@ func (c *Container) Build(options ...Option) *Component {
 		options = append(options, WithServerInterceptor(metricServerInterceptor(c.name, c.config)))
 	}
 
+	if c.config.EnableCompress {
+		if c.config.CompressLimit <= 0 {
+			c.config.CompressLimit = defaultCompressLimit
+		}
+		// 注册默认压缩器
+		//Register(defaultCompressor)
+		// 加载 interceptor
+		options = append(options, WithClientInterceptor(compressClientInterceptor(c.name, c.config, c.logger)),
+			WithServerInterceptor(compressServerInterceptor(c.name, c.config, c.logger)))
+	}
+
 	for _, option := range options {
 		option(c)
 	}
