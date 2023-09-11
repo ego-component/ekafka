@@ -13,10 +13,11 @@ func main() {
 		//初始化ekafka组件
 		cmp := ekafka.Load("kafka").Build()
 		// 使用p1生产者生产消息
-		produce(context.Background(), cmp.Producer("p1"))
+		ctx := context.Background()
+		produce(ctx, cmp.Producer("p1"))
 
 		// 使用c1消费者消费消息
-		consume(cmp.Consumer("c1"))
+		consume(ctx, cmp.Consumer("c1"))
 		return nil
 	}).Run()
 
@@ -44,12 +45,7 @@ func produce(ctx context.Context, w *ekafka.Producer) {
 }
 
 // consume 使用consumer/consumerGroup消费消息
-func consume(r *ekafka.Consumer) {
-	ctx := context.Background()
-	err := r.SetOffset(32)
-	if err != nil {
-		panic(err)
-	}
+func consume(ctx context.Context, r *ekafka.Consumer) {
 	for {
 		// ReadMessage 再收到下一个Message时，会阻塞
 		msg, ctxOutput, err := r.FetchMessage(ctx)
