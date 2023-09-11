@@ -108,7 +108,7 @@ func (r *Consumer) FetchMessage(ctx context.Context) (msg Message, ctxOutput con
 		msg, err = r.r.FetchMessage(ctx)
 		// 在后面才解析了header
 		ctxOutput = r.getCtx(ctx, msg)
-		logCmd(r.logMode, c, "FetchMessage", cmdWithMsg(msg))
+		logCmd(r.logMode, c, "FetchMessage", cmdWithMsg(msg), cmdWithRes(&msg))
 		return err
 	})(ctx, nil, &cmd{})
 	return
@@ -136,7 +136,7 @@ func (r *Consumer) ReadMessage(ctx context.Context) (msg Message, ctxOutput cont
 		msg, err = r.r.ReadMessage(ctx)
 		// 在后面才解析了header
 		ctxOutput = r.getCtx(ctx, msg)
-		logCmd(r.logMode, c, "ReadMessage", cmdWithRes(msg), cmdWithMsg(msg))
+		logCmd(r.logMode, c, "ReadMessage", cmdWithRes(&msg), cmdWithMsg(msg))
 		return err
 	})(ctx, nil, &cmd{})
 	return

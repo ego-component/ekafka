@@ -33,6 +33,14 @@ func Load(key string) *Container {
 
 	c.logger = c.logger.With(elog.FieldComponentName(key))
 	c.name = key
+	if c.config.EnableCompress {
+		if c.config.CompressLimit <= 0 {
+			c.config.CompressLimit = defaultCompressLimit
+		}
+		if c.config.CompressType == "" {
+			c.config.CompressType = compressTypeGzip
+		}
+	}
 	return c
 }
 
@@ -45,23 +53,17 @@ func (c *Container) Build(options ...Option) *Component {
 	if c.config.EnableMetricInterceptor {
 		options = append(options, WithClientInterceptor(metricClientInterceptor(c.name, c.config)))
 	}
-
+	if c.config.EnableCompress {
+		options = append(options, WithClientInterceptor(compressClientInterceptor(c.name, c.config, c.logger)))
+	}
 	options = append(options, WithServerInterceptor(fixedServerInterceptor(c.name, c.config)))
 	options = append(options, WithServerInterceptor(traceServerInterceptor(c.name, c.config)))
 	options = append(options, WithServerInterceptor(accessServerInterceptor(c.name, c.config, c.logger)))
 	if c.config.EnableMetricInterceptor {
 		options = append(options, WithServerInterceptor(metricServerInterceptor(c.name, c.config)))
 	}
-
 	if c.config.EnableCompress {
-		if c.config.CompressLimit <= 0 {
-			c.config.CompressLimit = defaultCompressLimit
-		}
-		// 注册默认压缩器
-		//Register(defaultCompressor)
-		// 加载 interceptor
-		options = append(options, WithClientInterceptor(compressClientInterceptor(c.name, c.config, c.logger)),
-			WithServerInterceptor(compressServerInterceptor(c.name, c.config, c.logger)))
+		options = append(options, WithServerInterceptor(compressServerInterceptor(c.name, c.config, c.logger)))
 	}
 
 	for _, option := range options {

@@ -31,6 +31,10 @@ func Register(comp Compressor) {
 	compressors[comp.ContentEncoding()] = comp
 }
 
+func init() {
+	Register(defaultCompressor)
+}
+
 func GetCompressor(encoding string) Compressor {
 	if encoding == "" {
 		return defaultCompressor
