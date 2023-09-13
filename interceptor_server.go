@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go.uber.org/zap"
 	"log"
 	"runtime"
 	"strconv"
@@ -175,4 +176,48 @@ func fileServerWithLineNum() string {
 		}
 	}
 	return ""
+}
+
+func compressServerInterceptor(compName string, config *config, logger *elog.Component) ServerInterceptor {
+	return func(next serverProcessFn) serverProcessFn {
+		return func(ctx context.Context, msgs Messages, cmd *cmd) error {
+			err := next(ctx, msgs, cmd)
+			if err != nil {
+				return err
+			}
+			var compressor Compressor
+			if cmd.res == nil {
+				return nil
+			}
+			value, ok := cmd.res.(*Message)
+			if !ok {
+				logger.Error("unexpected type", zap.Any("res", cmd.res))
+				return nil
+			}
+			headers := make([]kafka.Header, 0)
+			for i := range value.Headers {
+				h := value.Headers[i]
+				if h.Key == compressHeaderKey {
+					compressor = GetCompressor(string(h.Value))
+					if compressor == nil {
+						logger.Error("unknown compressor", zap.String("compName", compName), zap.String("compressType", config.CompressType))
+					}
+				} else {
+					headers = append(headers, h)
+				}
+			}
+			if compressor != nil {
+				// 移除header
+				value.Headers = headers
+				// 解压
+				value.Value, err = compressor.DeCompress(value.Value)
+				if err != nil {
+					// 解压有异常
+					return err
+				}
+			}
+
+			return nil
+		}
+	}
 }

@@ -25,11 +25,14 @@ type config struct {
 	clientInterceptors         []ClientInterceptor
 	serverInterceptors         []ServerInterceptor
 	balancers                  map[string]Balancer
-	EnableTraceInterceptor     bool // 是否开启链路追踪，默认开启
-	EnableAccessInterceptor    bool // 是否开启记录请求数据，默认不开启
-	EnableAccessInterceptorReq bool // 是否开启记录请求参数，默认不开启
-	EnableAccessInterceptorRes bool // 是否开启记录响应参数，默认不开启
-	EnableMetricInterceptor    bool // 是否开启监控，默认开启
+	EnableTraceInterceptor     bool   // 是否开启链路追踪，默认开启
+	EnableAccessInterceptor    bool   // 是否开启记录请求数据，默认不开启
+	EnableAccessInterceptorReq bool   // 是否开启记录请求参数，默认不开启
+	EnableAccessInterceptorRes bool   // 是否开启记录响应参数，默认不开启
+	EnableMetricInterceptor    bool   // 是否开启监控，默认开启
+	EnableCompress             bool   // 是否开启压缩，默认不开启
+	CompressLimit              int    // 大于该值后才压缩，单位字节
+	CompressType               string // 压缩算法，默认gzip
 	// TLS 参数支持
 	Authentication Authentication
 }
@@ -129,6 +132,7 @@ type consumerGroupConfig struct {
 const (
 	balancerHash       = "hash"
 	balancerRoundRobin = "roundRobin"
+	compressHeaderKey  = "Content-Encoding"
 )
 
 // DefaultConfig 返回默认配置
