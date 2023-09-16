@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/ego-component/ekafka"
-	"github.com/ego-component/ekafka/consumerserver"
 	"github.com/gotomicro/ego"
 	"github.com/gotomicro/ego/core/elog"
 	"github.com/gotomicro/ego/server/egovernor"
 	"github.com/segmentio/kafka-go"
+
+	"github.com/ego-component/ekafka"
+	"github.com/ego-component/ekafka/consumerserver"
 )
 
 var (

@@ -2,31 +2,37 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/ego-component/ekafka"
-	"github.com/ego-component/ekafka/consumerserver"
 	"github.com/gotomicro/ego"
 	"github.com/gotomicro/ego/core/econf"
 	"github.com/gotomicro/ego/core/elog"
+	"github.com/gotomicro/ego/core/etrace"
+	"github.com/gotomicro/ego/core/etrace/ejaeger"
 	"github.com/gotomicro/ego/server/egovernor"
-	"github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+
+	"github.com/ego-component/ekafka"
+	"github.com/ego-component/ekafka/consumerserver"
 )
 
 func main() {
+	etrace.SetGlobalTracer(ejaeger.DefaultConfig().Build())
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 	conf := `
 	[kafka]
 	debug=true
-	brokers=["localhost:9094"]
+	brokers = ["192.168.64.65:9091", "192.168.64.65:9092", "192.168.64.65:9093"]
 	[kafka.client]
         timeout="3s"
 	[kafka.producers.p1]        # 定义了名字为p1的producer
-		topic="sre-infra-test"  # 指定生产消息的topic
+		topic="sre-infra-debug"  # 指定生产消息的topic
 
 	[kafka.consumers.c1]        # 定义了名字为c1的consumer
-		topic="sre-infra-test"  # 指定消费的topic
+		topic="sre-infra-debug"  # 指定消费的topic
 		groupID="group-1"       # 如果配置了groupID，将初始化为consumerGroup	
 
 	[kafkaConsumerServers.s1]
@@ -51,16 +57,17 @@ func main() {
 				consumerserver.WithEkafka(ec),
 			)
 
-			// 用来接收、处理 `kafka-go` 和处理消息的回调产生的错误
-			consumptionErrors := make(chan error)
-
 			// 注册处理消息的回调函数
-			cs.OnEachMessage(consumptionErrors, func(ctx context.Context, message kafka.Message) error {
-				fmt.Printf("got a message: %s\n", string(message.Value))
-				// 如果返回错误则会被转发给 `consumptionErrors`
-				return nil
-			})
+			// cs.OnConsumeEachMessage(func(ctx context.Context, message *ekafka.Message) error {
+			// 	fmt.Printf("got a message: %s\n", string(message.Value))
+			// 	// 如果返回错误会跳过commit
+			// 	return nil
+			// })
 
+			cs.SubscribeBatchHandler(func(ctx context.Context, messages []*ekafka.CtxMessage) error {
+				// 如果返回错误会跳过commit
+				return nil
+			}, 3, time.Minute*10)
 			return cs
 		}(),
 		// 还可以启动多个 Consumer Server
