@@ -34,7 +34,7 @@ type ConsumerGroup struct {
 	currentGen *kafka.Generation
 	genMu      sync.RWMutex
 	readerWg   sync.WaitGroup
-	processor  ClientInterceptor
+	processor  ServerInterceptor
 }
 
 func createTopicPartitionsFromGenAssignments(genAssignments map[string][]kafka.PartitionAssignment) []TopicPartition {
@@ -131,7 +131,7 @@ func NewConsumerGroup(options ConsumerGroupOptions) (*ConsumerGroup, error) {
 	return cg, nil
 }
 
-func (cg *ConsumerGroup) wrapProcessor(wrapFn ClientInterceptor) {
+func (cg *ConsumerGroup) wrapProcessor(wrapFn ServerInterceptor) {
 	cg.processor = wrapFn
 }
 
