@@ -8,8 +8,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/gotomicro/ego/core/econf"
-	"github.com/gotomicro/ego/core/etrace"
-	"github.com/gotomicro/ego/core/etrace/ejaeger"
 
 	"github.com/ego-component/ekafka"
 )
@@ -17,16 +15,21 @@ import (
 // produce 生产消息
 func main() {
 	// 假设你配置的toml如下所示
-	etrace.SetGlobalTracer(ejaeger.DefaultConfig().Build())
 	conf := `
 [kafka]
 	debug=true
-	brokers = ["192.168.64.65:9091", "192.168.64.65:9092", "192.168.64.65:9093"]
-EnableAccessInterceptor = true
+	brokers=["localhost:9093"]
+    [kafka.authentication]
+        [kafka.authentication.tls]
+            enabled=false
+            CAFile=""
+            CertFile=""
+            KeyFile=""
+            InsecureSkipVerify=true
 	[kafka.client]
 		timeout="3s"
 	[kafka.producers.p1]        # 定义了名字为 p1 的 producer
-		topic="sre-infra-debug"  # 指定生产消息的 topic 
+		topic="sre-infra-test"  # 指定生产消息的 topic 
 `
 	// 加载配置文件
 	err := econf.LoadFromReader(strings.NewReader(conf), toml.Unmarshal)
