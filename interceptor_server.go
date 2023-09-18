@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.uber.org/zap"
 	"log"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/gotomicro/ego/core/eapp"
 	"github.com/gotomicro/ego/core/elog"
@@ -94,10 +95,11 @@ func accessServerInterceptor(compName string, c *config, logger *elog.Component)
 				// propagator := propagation.TraceContext{}
 				// propagator.Inject(ctx, carrier)
 				var span trace.Span
-				ctx, span = tracer.Start(ctx, "kafka", carrier, trace.WithAttributes(attrs...))
+				ctx, span = tracer.Start(ctx, fmt.Sprintf("kafka.%s", cmd.name), carrier, trace.WithAttributes(attrs...))
 				defer span.End()
 				span.SetAttributes(
-					semconv.MessagingDestinationKindKey.String(cmd.msg.Topic),
+					semconv.MessagingDestinationKindTopic,
+					semconv.MessagingDestinationKey.String(cmd.msg.Topic),
 				)
 			}
 
