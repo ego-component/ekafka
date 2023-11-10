@@ -75,7 +75,7 @@ func (cmp *Component) Producer(name string) *Producer {
 		cmp.logger.Panic("create mechanism error", elog.String("mechanism", cmp.config.SASLMechanism), elog.String("errorDetail", err.Error()))
 	}
 
-	var transport *kafka.Transport
+	var transport = &kafka.Transport{}
 	if mechanism != nil {
 		cmp.logger.Debug("new transport with sasl mechanism", elog.String("mechanism", cmp.config.SASLMechanism), elog.String("username", cmp.config.SASLUserName), elog.String("password", cmp.config.SASLPassword))
 		cmp.newProducerSASLTransport(transport, mechanism)
