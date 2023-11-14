@@ -179,7 +179,9 @@ func (cmp *Component) launchOnConsumerGroupStart() error {
 
 	handlerExit := make(chan error)
 	go func() {
-		handlerExit <- cmp.onConsumerGroupStartHandler(cmp.ServerCtx, consumerGroup)
+		e := cmp.onConsumerGroupStartHandler(cmp.ServerCtx, consumerGroup)
+		cmp.logger.Info("receive onConsumerGroupStartHandler chan, handlerExit now", elog.FieldErr(e))
+		handlerExit <- e
 		close(handlerExit)
 	}()
 

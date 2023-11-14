@@ -149,8 +149,10 @@ func (cg *ConsumerGroup) run() {
 			cg.events <- err
 			return
 		}
+
 		cg.genMu.Lock()
 		cg.currentGen = gen
+		cg.logger.Info("get group.Next succ", elog.Any("gen", gen))
 		cg.genMu.Unlock()
 
 		// Organize partitions
@@ -167,6 +169,7 @@ func (cg *ConsumerGroup) run() {
 		// We don't support multiple topics yet.
 		assignments, ok := gen.Assignments[cg.options.Topic]
 		if !ok {
+			cg.logger.Error("get gen.Assignments fail", elog.Any("assignments", gen.Assignments), elog.String("topic", cg.options.Topic))
 			cg.events <- fmt.Errorf("topic \"%s\" not found in assignments", cg.options.Topic)
 			break
 		}
@@ -209,14 +212,18 @@ func (cg *ConsumerGroup) run() {
 				defer reader.Close()
 
 				// seek to the last committed offset for this partition.
-				reader.SetOffset(offset)
+				if e := reader.SetOffset(offset); e != nil {
+					cg.logger.Error("reader.SetOffset fail", elog.FieldErr(e))
+					return
+				}
 				for {
 					msg, err := reader.FetchMessage(ctx)
-
 					switch err {
 					case kafka.ErrGroupClosed:
+						cg.logger.Error("gen stop with kafka.ErrGroupClosed", elog.FieldErr(err))
 						return
 					case kafka.ErrGenerationEnded:
+						cg.logger.Error("gen stop with kafka.ErrGenerationEnded", elog.FieldErr(err))
 						// emit RevokedPartitions event
 						revokeOnce.Do(func() {
 							cg.events <- RevokedPartitions{
@@ -226,10 +233,12 @@ func (cg *ConsumerGroup) run() {
 
 						return
 					case io.EOF:
+						cg.logger.Error("gen stop with io.EOF", elog.FieldErr(err))
 						// Reader has been closed
 						return
 					case nil:
 						// message received.
+						cg.logger.Debug("message received", elog.FieldErr(err))
 						cg.events <- msg
 					default:
 						cg.events <- err
