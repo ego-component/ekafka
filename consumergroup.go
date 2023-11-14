@@ -141,18 +141,17 @@ func (cg *ConsumerGroup) run() {
 
 	for {
 		gen, err := cg.group.Next(context.TODO())
-		cg.genMu.Lock()
-		cg.currentGen = gen
-		cg.genMu.Unlock()
-
 		if err != nil {
+			cg.logger.Warn("get group.Next fail", elog.FieldErr(err))
 			if errors.Is(err, kafka.ErrGroupClosed) {
 				return
 			}
-
 			cg.events <- err
 			return
 		}
+		cg.genMu.Lock()
+		cg.currentGen = gen
+		cg.genMu.Unlock()
 
 		// Organize partitions
 		topicPartitions := createTopicPartitionsFromGenAssignments(gen.Assignments)
