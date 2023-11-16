@@ -138,7 +138,7 @@ const (
 // DefaultConfig 返回默认配置
 func DefaultConfig() *config {
 	return &config{
-		Debug:                   true,
+		Debug:                   false,
 		EnableTraceInterceptor:  true,
 		EnableMetricInterceptor: true,
 		balancers: map[string]Balancer{
