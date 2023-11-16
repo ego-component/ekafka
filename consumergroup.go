@@ -34,7 +34,7 @@ type ConsumerGroup struct {
 	currentGen *kafka.Generation
 	genMu      sync.RWMutex
 	readerWg   sync.WaitGroup
-	processor  ClientInterceptor
+	processor  ServerInterceptor
 }
 
 func createTopicPartitionsFromGenAssignments(genAssignments map[string][]kafka.PartitionAssignment) []TopicPartition {
@@ -131,7 +131,7 @@ func NewConsumerGroup(options ConsumerGroupOptions) (*ConsumerGroup, error) {
 	return cg, nil
 }
 
-func (cg *ConsumerGroup) wrapProcessor(wrapFn ClientInterceptor) {
+func (cg *ConsumerGroup) wrapProcessor(wrapFn ServerInterceptor) {
 	cg.processor = wrapFn
 }
 
@@ -231,7 +231,10 @@ func (cg *ConsumerGroup) run() {
 						return
 					case nil:
 						// message received.
-						cg.events <- msg
+						cg.events <- &CtxMessage{
+							Message: &msg,
+							Ctx:     getCtx(ctx, msg),
+						}
 					default:
 						cg.events <- err
 					}
@@ -249,12 +252,38 @@ func (cg *ConsumerGroup) Poll(ctx context.Context) (msg interface{}, err error) 
 			return ctx.Err()
 		case msg = <-cg.events:
 			var name string
+			switch tmsg := msg.(type) {
+			case AssignedPartitions:
+				name = "AssignedPartitions"
+			case RevokedPartitions:
+				name = "RevokedPartitions"
+			case *CtxMessage:
+				name = "FetchMessage"
+				msg = *tmsg.Message // 兼容之前，传 kafka.Message 出去
+			default:
+				name = "FetchError"
+			}
+			logCmd(cg.options.logMode, c, name, cmdWithRes(msg))
+			return nil
+		}
+	})(ctx, nil, &cmd{})
+	return
+}
+
+func (cg *ConsumerGroup) PollV2(ctx context.Context) (msg interface{}, err error) {
+	err = cg.processor(func(ctx context.Context, msgs Messages, c *cmd) error {
+		select {
+		case <-ctx.Done():
+			logCmd(cg.options.logMode, c, "FetchMessage")
+			return ctx.Err()
+		case msg = <-cg.events:
+			var name string
 			switch msg.(type) {
 			case AssignedPartitions:
 				name = "AssignedPartitions"
 			case RevokedPartitions:
 				name = "RevokedPartitions"
-			case Message:
+			case *CtxMessage:
 				name = "FetchMessage"
 			default:
 				name = "FetchError"

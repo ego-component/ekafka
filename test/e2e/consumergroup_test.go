@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/segmentio/kafka-go"
-	"github.com/stretchr/testify/assert"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/segmentio/kafka-go"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/ego-component/ekafka"
 )
@@ -34,10 +35,10 @@ func consumerGroupConsume(
 			return
 		}
 		switch e := event.(type) {
-		case ekafka.Message:
+		case *ekafka.CtxMessage:
 			received := string(e.Value)
 			if received == expectedMessage {
-				commitCtx, _ := context.WithTimeout(ctx, 10*time.Second)
+				commitCtx, _ := context.WithTimeout(e.Ctx, 10*time.Second)
 				err := consumerGroup.CommitMessages(commitCtx, ekafka.Message{
 					Partition: e.Partition,
 					Offset:    e.Offset,

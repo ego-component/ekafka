@@ -15,7 +15,7 @@ import (
 )
 
 type Handler func(ctx context.Context, message *ekafka.Message) error
-type BatchHandler func(messages []*ekafka.CtxMessage) error
+type BatchHandler func(lastCtx context.Context, messages []*ekafka.CtxMessage) error
 
 type Listener interface {
 	Handle(ctx context.Context, message *ekafka.Message, opts ...handleOption) (bool, error)
@@ -168,7 +168,7 @@ func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message, opt
 	var err error
 	var storeOffset bool
 	if l.BatchUpdateSize > 0 && len(l.Batch) >= l.BatchUpdateSize {
-		if err = l.Handler(l.Batch[:l.BatchUpdateSize]); err != nil {
+		if err = l.Handler(ctx, l.Batch[:l.BatchUpdateSize]); err != nil {
 			l.logger.Error("batch_handle_message_fail", elog.FieldCtxTid(ctx), zap.Int("batch_len", len(l.Batch)))
 			return false, err
 		}
@@ -176,7 +176,7 @@ func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message, opt
 		l.Batch = l.Batch[:len(l.Batch)-l.BatchUpdateSize]
 		storeOffset = true
 	} else if len(l.Batch) > 0 && time.Since(l.Batch[0].Time) >= l.Timeout {
-		if err = l.Handler(l.Batch); err != nil {
+		if err = l.Handler(ctx, l.Batch); err != nil {
 			l.logger.Error("batch_handle_message_fail", elog.FieldCtxTid(ctx), zap.Int("batch_len", len(l.Batch)), zap.Int64("time", l.Batch[0].Time.Unix()))
 			return false, err
 		}

@@ -107,7 +107,7 @@ func (r *Consumer) FetchMessage(ctx context.Context) (msg Message, ctxOutput con
 	err = r.processor(func(ctx context.Context, msgs Messages, c *cmd) error {
 		msg, err = r.r.FetchMessage(ctx)
 		// 在后面才解析了header
-		ctxOutput = r.getCtx(ctx, msg)
+		ctxOutput = getCtx(ctx, msg)
 		logCmd(r.logMode, c, "FetchMessage", cmdWithMsg(msg), cmdWithRes(&msg))
 		return err
 	})(ctx, nil, &cmd{})
@@ -135,7 +135,7 @@ func (r *Consumer) ReadMessage(ctx context.Context) (msg Message, ctxOutput cont
 	err = r.processor(func(ctx context.Context, msgs Messages, c *cmd) error {
 		msg, err = r.r.ReadMessage(ctx)
 		// 在后面才解析了header
-		ctxOutput = r.getCtx(ctx, msg)
+		ctxOutput = getCtx(ctx, msg)
 		logCmd(r.logMode, c, "ReadMessage", cmdWithRes(&msg), cmdWithMsg(msg))
 		return err
 	})(ctx, nil, &cmd{})
@@ -156,7 +156,7 @@ func (r *Consumer) SetOffsetAt(ctx context.Context, t time.Time) (err error) {
 	})(ctx, nil, &cmd{})
 }
 
-func (r *Consumer) getCtx(ctx context.Context, msg Message) context.Context {
+func getCtx(ctx context.Context, msg Message) context.Context {
 	// 我也不想这么处理追加的context内容。奈何协议头在用户数据里，无能为力。。。
 	if transport.CustomContextKeysLength() > 0 {
 		for _, key := range transport.CustomContextKeys() {

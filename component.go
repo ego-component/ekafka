@@ -252,7 +252,7 @@ func (cmp *Component) ConsumerGroup(name string) *ConsumerGroup {
 	if err != nil {
 		cmp.logger.Panic("create ConsumerGroup failed", elog.FieldErr(err))
 	}
-	consumerGroup.wrapProcessor(cmp.interceptorClientChain())
+	consumerGroup.wrapProcessor(cmp.interceptorServerChain())
 	cmp.consumerGroups[name] = consumerGroup
 	cmp.consumerGroupMu.Unlock()
 

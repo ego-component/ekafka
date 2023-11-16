@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.uber.org/zap"
 	"log"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/gotomicro/ego/core/eapp"
 	"github.com/gotomicro/ego/core/elog"
@@ -71,7 +72,7 @@ func traceClientInterceptor(compName string, c *config) ClientInterceptor {
 	return func(next clientProcessFn) clientProcessFn {
 		return func(ctx context.Context, msgs Messages, cmd *cmd) error {
 			carrier := propagation.MapCarrier{}
-			ctx, span := tracer.Start(ctx, "kafka", carrier, trace.WithAttributes(attrs...))
+			ctx, span := tracer.Start(ctx, fmt.Sprintf("kafka.%s", cmd.name), carrier, trace.WithAttributes(attrs...))
 			defer span.End()
 
 			headers := make([]kafka.Header, 0)
@@ -88,7 +89,8 @@ func traceClientInterceptor(compName string, c *config) ClientInterceptor {
 			err := next(ctx, msgs, cmd)
 
 			span.SetAttributes(
-				semconv.MessagingDestinationKindKey.String(cmd.msg.Topic),
+				semconv.MessagingDestinationKindTopic,
+				semconv.MessagingDestinationKey.String(cmd.msg.Topic),
 			)
 
 			return err
