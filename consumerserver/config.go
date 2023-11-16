@@ -12,7 +12,7 @@ type config struct {
 // DefaultConfig returns a default config.
 func DefaultConfig() *config {
 	return &config{
-		Debug:             true,
+		Debug:             false,
 		ConsumerName:      "default",
 		ConsumerGroupName: "default",
 	}
