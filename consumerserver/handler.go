@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/ego-component/ekafka"
 	"github.com/segmentio/kafka-go"
+
+	"github.com/ego-component/ekafka"
 )
 
 // OnEachMessageHandler ...
@@ -25,7 +26,7 @@ type listenerWrapper struct {
 	onConsumeEachMessageHandler OnConsumeEachMessageHandler
 }
 
-func (w listenerWrapper) Handle(ctx context.Context, message *ekafka.Message) (bool, error) {
+func (w listenerWrapper) Handle(ctx context.Context, message *ekafka.Message, opts ...handleOption) (bool, error) {
 	if w.onEachMessageHandler != nil {
 		err := w.onEachMessageHandler(ctx, *message)
 		if err != nil {

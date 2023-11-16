@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/gotomicro/ego/core/elog"
@@ -17,7 +18,7 @@ type Handler func(ctx context.Context, message *ekafka.Message) error
 type BatchHandler func(messages []*ekafka.CtxMessage) error
 
 type Listener interface {
-	Handle(ctx context.Context, message *ekafka.Message) (bool, error)
+	Handle(ctx context.Context, message *ekafka.Message, opts ...handleOption) (bool, error)
 }
 
 type listeners []Listener
@@ -86,7 +87,7 @@ func (cmp *Component) newListener(handler Handler) Listener {
 	}
 }
 
-func (l *SyncListener) Handle(ctx context.Context, message *ekafka.Message) (bool, error) {
+func (l *SyncListener) Handle(ctx context.Context, message *ekafka.Message, opts ...handleOption) (bool, error) {
 	if l.Handler != nil {
 		if err := l.Handler(ctx, message); err != nil {
 			return false, err
@@ -97,29 +98,72 @@ func (l *SyncListener) Handle(ctx context.Context, message *ekafka.Message) (boo
 }
 
 type BatchListener struct {
+	mtx             sync.RWMutex
 	Batch           []*ekafka.CtxMessage
 	BatchUpdateSize int
 	Timeout         time.Duration
 	Handler         BatchHandler
 	logger          *elog.Component
+	consumer        *ekafka.Consumer
 }
 
 func (cmp *Component) newBatchListener(handler BatchHandler, batchUpdateSize int, timeout time.Duration) Listener {
-	return &BatchListener{
+	bl := &BatchListener{
 		Handler:         handler,
 		Batch:           make([]*ekafka.CtxMessage, 0, batchUpdateSize),
 		BatchUpdateSize: batchUpdateSize,
 		Timeout:         timeout,
 		logger:          cmp.logger,
+		consumer:        cmp.Consumer(),
+	}
+	go func() {
+		// TODO set duration from config
+		t := time.NewTicker(3 * time.Second)
+		for {
+			select {
+			case <-cmp.ServerCtx.Done():
+				bl.logger.Info("ServerCtx.Done")
+				return
+			case <-t.C:
+				_, err := bl.Handle(context.Background(), nil, withIntervalCommitSig(true))
+				if err != nil && !errors.Is(err, ekafka.ErrDoNotCommit) {
+					bl.logger.Error("newBatchListener timer handle fail", elog.FieldErr(err))
+					break
+				}
+			}
+		}
+	}()
+	return bl
+}
+
+type handleOpt struct {
+	intervalCommitSig bool
+}
+
+type handleOption func(c *handleOpt)
+
+func withIntervalCommitSig(intervalCommitSig bool) handleOption {
+	return func(c *handleOpt) {
+		c.intervalCommitSig = intervalCommitSig
 	}
 }
 
-func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message) (bool, error) {
-	l.Batch = append(l.Batch, &ekafka.CtxMessage{
-		Message: message,
-		Ctx:     ctx,
-	})
-	l.logger.Info("kafka_consumer_batch", elog.FieldCtxTid(ctx), elog.Int("batch_len", len(l.Batch)), elog.Duration("time_since", time.Since(l.Batch[0].Time)))
+func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message, optFuncs ...handleOption) (bool, error) {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	var o = &handleOpt{}
+	for _, optFunc := range optFuncs {
+		optFunc(o)
+	}
+
+	if message != nil {
+		l.Batch = append(l.Batch, &ekafka.CtxMessage{
+			Message: message,
+			Ctx:     ctx,
+		})
+		l.logger.Info("kafka_consumer_batch", elog.FieldCtxTid(ctx), elog.Int("batch_len", len(l.Batch)), elog.Duration("time_since", time.Since(l.Batch[0].Time)))
+	}
 
 	var err error
 	var storeOffset bool
@@ -137,6 +181,13 @@ func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message) (bo
 			return false, err
 		}
 
+		// 需要周期性提交还在内存中的message
+		if o.intervalCommitSig {
+			l.logger.Debug("kafka_consumer_batch timer try to commit message in memory")
+			if err := l.consumer.CommitMessages(ctx, l.Batch[len(l.Batch)-1].Message); err != nil {
+				l.logger.Error("newBatchListener timer handle CommitMessages fail", elog.FieldErr(err))
+			}
+		}
 		l.Batch = l.Batch[0:0]
 		storeOffset = true
 	}
