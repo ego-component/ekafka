@@ -21,6 +21,8 @@ type Listener interface {
 	Handle(ctx context.Context, message *ekafka.Message, opts ...handleOption) (bool, error)
 }
 
+type ctxKeyInBatch struct{}
+
 type listeners []Listener
 
 func (l listeners) dispatch(ctx context.Context, message *ekafka.Message, logger *elog.Component) (err error) {
@@ -160,9 +162,9 @@ func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message, opt
 	if message != nil {
 		l.Batch = append(l.Batch, &ekafka.CtxMessage{
 			Message: message,
-			Ctx:     ctx,
+			Ctx:     context.WithValue(ctx, ctxKeyInBatch{}, time.Now()),
 		})
-		l.logger.Info("kafka_consumer_batch", elog.FieldCtxTid(ctx), elog.Int("batch_len", len(l.Batch)), elog.Duration("time_since", time.Since(l.Batch[0].Time)))
+		l.logger.Debug("kafka_consumer_batch", elog.FieldCtxTid(ctx), elog.Int("batch_len", len(l.Batch)), elog.Duration("time_since", time.Since(l.Batch[0].Time)))
 	}
 
 	var err error
@@ -175,7 +177,7 @@ func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message, opt
 		copy(l.Batch, l.Batch[l.BatchUpdateSize:])
 		l.Batch = l.Batch[:len(l.Batch)-l.BatchUpdateSize]
 		storeOffset = true
-	} else if len(l.Batch) > 0 && time.Since(l.Batch[0].Time) >= l.Timeout {
+	} else if len(l.Batch) > 0 && time.Since(l.Batch[0].Ctx.Value(ctxKeyInBatch{}).(time.Time)) >= l.Timeout {
 		if err = l.Handler(ctx, l.Batch); err != nil {
 			l.logger.Error("batch_handle_message_fail", elog.FieldCtxTid(ctx), zap.Int("batch_len", len(l.Batch)), zap.Int64("time", l.Batch[0].Time.Unix()))
 			return false, err
