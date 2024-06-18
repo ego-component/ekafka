@@ -55,6 +55,13 @@ func main() {
 			// 用来接收、处理 `kafka-go` 和处理消息的回调产生的错误
 			consumptionErrors := make(chan error)
 
+			go func() {
+				for e := range consumptionErrors {
+					err := fmt.Errorf("consume failed: %w", e)
+					fmt.Println(err)
+				}
+			}()
+
 			// 注册处理消息的回调函数
 			cs.OnEachMessage(consumptionErrors, func(ctx context.Context, message kafka.Message) error {
 				fmt.Printf("got a message: %s\n", string(message.Value))
