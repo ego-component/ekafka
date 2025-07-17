@@ -8,7 +8,7 @@ type logger struct {
 }
 
 func (l *logger) Printf(tmpl string, args ...interface{}) {
-	l.Debugf(tmpl, args...)
+	l.Infof(tmpl, args...)
 }
 
 // errorLogger is an elog to kafka-go ErrorLogger adapter
@@ -21,9 +21,9 @@ func (l *errorLogger) Printf(tmpl string, args ...interface{}) {
 }
 
 func newKafkaLogger(wrappedLogger *elog.Component) *logger {
-	return &logger{wrappedLogger}
+	return &logger{wrappedLogger.With(elog.FieldMethod("internal"))}
 }
 
 func newKafkaErrorLogger(wrappedLogger *elog.Component) *errorLogger {
-	return &errorLogger{wrappedLogger}
+	return &errorLogger{wrappedLogger.With(elog.FieldMethod("internal"))}
 }
