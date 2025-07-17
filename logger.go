@@ -1,6 +1,10 @@
 package ekafka
 
-import "github.com/gotomicro/ego/core/elog"
+import (
+	"strings"
+
+	"github.com/gotomicro/ego/core/elog"
+)
 
 // errorLogger is an elog to kafka-go Logger adapter
 type logger struct {
@@ -8,6 +12,10 @@ type logger struct {
 }
 
 func (l *logger) Printf(tmpl string, args ...interface{}) {
+	// 正确的信息，并且太多，过滤掉
+	if strings.HasPrefix(tmpl, "no messages received from kafka") {
+		return
+	}
 	l.Infof(tmpl, args...)
 }
 
