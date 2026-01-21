@@ -246,13 +246,11 @@ startOffset = -1
 # 默认为同步提交，可以配置自动批量提交间隔来提高性能
 commitInterval = "1s"
 
-[kafkaConsumerServers.s1]
-debug=true
+[kafka.consumerServers.s1]
 # 使用 ekafka 中注册的哪一个 Consumer，对应 `kafka.consumers.[name]` 配置项
 consumerName="c1"
 # 也可以配合 ConsumerGroup 使用
 consumerGroupName="cg1"
-
 ```
 
 #### StartOffset
@@ -289,10 +287,7 @@ func main() {
 		func() *consumerserver.Component {
 			// 依赖 `ekafka` 管理 Kafka consumer
 			ec := ekafka.Load("kafka").Build()
-			cs := consumerserver.Load("kafkaConsumerServers.s1").Build(
-				consumerserver.WithEkafka(ec),
-			)
-
+			cs := ec.ConsumerServer("s1")
 
 			// 注册处理消息的回调函数
 			cs.OnConsumeEachMessage(func(ctx context.Context, message *kafka.Message) error {
@@ -336,10 +331,8 @@ func main() {
 		func() *consumerserver.Component {
 			// 依赖 `ekafka` 管理 Kafka Consumer
 			ec := ekafka.Load("kafka").Build()
-			cs := consumerserver.Load("kafkaConsumerServers.s1").Build(
-				consumerserver.WithEkafka(ec),
-			)
-
+			cs := ec.ConsumerServer("s1")
+            
 			// 注册处理消息的回调函数
 			cs.OnStart(func(ctx context.Context, consumer *ekafka.Consumer) error {
 				// 编写自己的消费逻辑...
@@ -378,10 +371,8 @@ func main() {
 		func() *consumerserver.Component {
 			// 依赖 `ekafka` 管理 Kafka ConsumerGroup
 			ec := ekafka.Load("kafka").Build()
-			cs := consumerserver.Load("kafkaConsumerServers.s1").Build(
-				consumerserver.WithEkafka(ec),
-			)
-
+			cs := ec.ConsumerServer("s1")
+            
 			// 注册处理消息的回调函数
 			cs.OnConsumerGroupStart(func(ctx context.Context, consumerGroup *ekafka.ConsumerGroup) error {
 				// 编写自己的消费逻辑...

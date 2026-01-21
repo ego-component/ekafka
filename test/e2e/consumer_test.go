@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ego-component/ekafka"
 	"github.com/segmentio/kafka-go"
+
+	"github.com/ego-component/ekafka"
 )
 
 // 写入一条随机内容的消息然后验证是否能消费到
@@ -26,7 +27,9 @@ func Test_ConsumeWithConsumer(t *testing.T) {
 	consumed := make(chan struct{}, 1)
 	consumerGroupErr := make(chan error, 1)
 	go func() {
-		ctx, _ := context.WithTimeout(context.Background(), 1*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+
 		consumer := cmp.Consumer("c1")
 		for {
 			msg, _, err := consumer.ReadMessage(ctx)

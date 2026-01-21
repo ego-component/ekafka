@@ -11,7 +11,6 @@ import (
 	"github.com/segmentio/kafka-go"
 
 	"github.com/ego-component/ekafka"
-	"github.com/ego-component/ekafka/consumerserver"
 )
 
 var (
@@ -29,19 +28,13 @@ func main() {
 		egovernor.Load("server.governor").Build(),
 
 		// 初始化 Consumer Server
-		func() *consumerserver.Component {
+		func() *ekafka.ConsumerServer {
 			// 依赖 `ekafka` 管理 Kafka consumer
 			ec = ekafka.Load("kafka").Build()
-			cs := consumerserver.Load("kafkaConsumerServers.s1").Build(
-				consumerserver.WithEkafka(ec),
-			)
-
-			// 用来接收、处理 `kafka-go` 和处理消息的回调产生的错误
-			consumptionErrors := make(chan error)
-
+			cs := ec.ConsumerServer("s1")
 			// 注册处理消息的回调函数
-			cs.OnEachMessage(consumptionErrors, func(ctx context.Context, message kafka.Message) error {
-				fmt.Printf("got a message: %s\n", string(message.Value))
+			cs.OnConsumeEachMessage(func(ctx context.Context, message *kafka.Message) error {
+				fmt.Printf("cs1 got a message: %s\n", string(message.Value))
 				// 如果返回错误则会被转发给 `consumptionErrors`
 				return nil
 			})

@@ -1,4 +1,4 @@
-package consumerserver
+package ekafka
 
 import (
 	"context"
@@ -10,22 +10,62 @@ import (
 
 	"github.com/gotomicro/ego/core/elog"
 	"go.uber.org/zap"
-
-	"github.com/ego-component/ekafka"
+	"github.com/segmentio/kafka-go"
 )
 
-type Handler func(ctx context.Context, message *ekafka.Message) error
-type BatchHandler func(lastCtx context.Context, messages []*ekafka.CtxMessage) error
+// OnEachMessageHandler ...
+type OnEachMessageHandler = func(ctx context.Context, message kafka.Message) error
+
+// OnConsumeEachMessageHandler ...
+type OnConsumeEachMessageHandler = func(ctx context.Context, message *Message) error
+
+// OnStartHandler ...
+type OnStartHandler = func(ctx context.Context, consumer *Consumer) error
+
+// OnConsumerGroupStartHandler ...
+type OnConsumerGroupStartHandler = func(ctx context.Context, consumerGroup *ConsumerGroup) error
+
+type listenerWrapper struct {
+	onEachMessageHandler        OnEachMessageHandler
+	onConsumeEachMessageHandler OnConsumeEachMessageHandler
+}
+
+func (w listenerWrapper) Handle(ctx context.Context, message *Message, opts ...handleOption) (bool, error) {
+	if w.onEachMessageHandler != nil {
+		err := w.onEachMessageHandler(ctx, *message)
+		if err != nil {
+			if errors.Is(err, ErrDoNotCommit) {
+				return false, nil
+			}
+			return false, err
+		}
+		return true, nil
+	}
+	if w.onConsumeEachMessageHandler != nil {
+		err := w.onConsumeEachMessageHandler(ctx, message)
+		if err != nil {
+			if errors.Is(err, ErrDoNotCommit) {
+				return false, nil
+			}
+			return false, err
+		}
+		return true, nil
+	}
+	panic("no handler wrapped")
+}
+
+type Handler func(ctx context.Context, message *Message) error
+type BatchHandler func(lastCtx context.Context, messages []*CtxMessage) error
 
 type Listener interface {
-	Handle(ctx context.Context, message *ekafka.Message, opts ...handleOption) (bool, error)
+	Handle(ctx context.Context, message *Message, opts ...handleOption) (bool, error)
 }
 
 type ctxKeyInBatch struct{}
 
 type listeners []Listener
 
-func (l listeners) dispatch(ctx context.Context, message *ekafka.Message, logger *elog.Component) (err error) {
+func (l listeners) dispatch(ctx context.Context, message *Message, logger *elog.Component) (err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			var buf [4096]byte
@@ -47,7 +87,7 @@ func (l listeners) dispatch(ctx context.Context, message *ekafka.Message, logger
 		commitOffset, err := listener.Handle(ctx, message)
 		if err != nil {
 			// If it's a retryable error, we should execute the handler again.
-			if errors.Is(err, ekafka.ErrRecoverableError) && retryCount < maxOnEachMessageHandlerRetryCount {
+			if errors.Is(err, ErrRecoverableError) && retryCount < maxOnEachMessageHandlerRetryCount {
 				retryCount++
 				goto HANDLER
 			}
@@ -62,7 +102,7 @@ func (l listeners) dispatch(ctx context.Context, message *ekafka.Message, logger
 		if len(errs) > 0 {
 			return fmt.Errorf("commitCount != len(listeners), %w", errs)
 		}
-		return ekafka.ErrDoNotCommit
+		return ErrDoNotCommit
 	}
 	return nil
 }
@@ -82,14 +122,14 @@ type SyncListener struct {
 	logger  *elog.Component
 }
 
-func (cmp *Component) newListener(handler Handler) Listener {
+func (cmp *ConsumerServer) newListener(handler Handler) Listener {
 	return &SyncListener{
 		Handler: handler,
 		logger:  cmp.logger,
 	}
 }
 
-func (l *SyncListener) Handle(ctx context.Context, message *ekafka.Message, opts ...handleOption) (bool, error) {
+func (l *SyncListener) Handle(ctx context.Context, message *Message, opts ...handleOption) (bool, error) {
 	if l.Handler != nil {
 		if err := l.Handler(ctx, message); err != nil {
 			return false, err
@@ -101,18 +141,18 @@ func (l *SyncListener) Handle(ctx context.Context, message *ekafka.Message, opts
 
 type BatchListener struct {
 	mtx             sync.RWMutex
-	Batch           []*ekafka.CtxMessage
+	Batch           []*CtxMessage
 	BatchUpdateSize int
 	Timeout         time.Duration
 	Handler         BatchHandler
 	logger          *elog.Component
-	consumer        *ekafka.Consumer
+	consumer        *Consumer
 }
 
-func (cmp *Component) newBatchListener(handler BatchHandler, batchUpdateSize int, timeout time.Duration) Listener {
+func (cmp *ConsumerServer) newBatchListener(handler BatchHandler, batchUpdateSize int, timeout time.Duration) Listener {
 	bl := &BatchListener{
 		Handler:         handler,
-		Batch:           make([]*ekafka.CtxMessage, 0, batchUpdateSize),
+		Batch:           make([]*CtxMessage, 0, batchUpdateSize),
 		BatchUpdateSize: batchUpdateSize,
 		Timeout:         timeout,
 		logger:          cmp.logger,
@@ -128,7 +168,7 @@ func (cmp *Component) newBatchListener(handler BatchHandler, batchUpdateSize int
 				return
 			case <-t.C:
 				_, err := bl.Handle(context.Background(), nil, withIntervalCommitSig(true))
-				if err != nil && !errors.Is(err, ekafka.ErrDoNotCommit) {
+				if err != nil && !errors.Is(err, ErrDoNotCommit) {
 					bl.logger.Error("newBatchListener timer handle fail", elog.FieldErr(err))
 					break
 				}
@@ -150,7 +190,7 @@ func withIntervalCommitSig(intervalCommitSig bool) handleOption {
 	}
 }
 
-func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message, optFuncs ...handleOption) (bool, error) {
+func (l *BatchListener) Handle(ctx context.Context, message *Message, optFuncs ...handleOption) (bool, error) {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
@@ -160,7 +200,7 @@ func (l *BatchListener) Handle(ctx context.Context, message *ekafka.Message, opt
 	}
 
 	if message != nil {
-		l.Batch = append(l.Batch, &ekafka.CtxMessage{
+		l.Batch = append(l.Batch, &CtxMessage{
 			Message: message,
 			Ctx:     context.WithValue(ctx, ctxKeyInBatch{}, time.Now()),
 		})

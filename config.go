@@ -18,10 +18,12 @@ type config struct {
 	// Consumers 多个生产者，用于消费消息
 	Consumers map[string]consumerConfig `json:"consumers" toml:"consumers"`
 	// ConsumerGroups 多个消费组，用于消费消息
-	ConsumerGroups             map[string]consumerGroupConfig `json:"consumerGroups" toml:"consumerGroups"`
-	SASLUserName               string                         `json:"saslUserName" toml:"saslUserName"`
-	SASLPassword               string                         `json:"saslPassword" toml:"saslPassword"`
-	SASLMechanism              string                         `json:"saslMechanism" toml:"saslMechanism"`
+	ConsumerGroups map[string]consumerGroupConfig `json:"consumerGroups" toml:"consumerGroups"`
+	// ConsumerServers 多个消费者Server，用于消费消息
+	ConsumerServers            map[string]consumerServerConfig `json:"consumerServers" toml:"consumerServers"`
+	SASLUserName               string                          `json:"saslUserName" toml:"saslUserName"`
+	SASLPassword               string                          `json:"saslPassword" toml:"saslPassword"`
+	SASLMechanism              string                          `json:"saslMechanism" toml:"saslMechanism"`
 	clientInterceptors         []ClientInterceptor
 	serverInterceptors         []ServerInterceptor
 	balancers                  map[string]Balancer

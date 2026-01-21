@@ -15,6 +15,6 @@ topic = "sre-infra-test" # 指定生产消息的topic
 topic = "sre-infra-test" # 指定消费的topic
 groupID = "group-1" # 如果配置了groupID，将初始化为consumerGroup
 
-[kafkaConsumerServers.s1]
+[kafka.consumerServers.s1]
 debug = true
 consumerName = "c1"

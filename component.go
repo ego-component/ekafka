@@ -15,17 +15,19 @@ const PackageName = "component.ekafka"
 
 // Component kafka 组件，包含Client、Producers、Consumers
 type Component struct {
-	config          *config
-	logger          *elog.Component
-	client          *Client
-	consumers       map[string]*Consumer
-	producers       map[string]*Producer
-	consumerGroups  map[string]*ConsumerGroup
-	clientOnce      sync.Once
-	consumerMu      sync.RWMutex
-	producerMu      sync.RWMutex
-	consumerGroupMu sync.RWMutex
-	compName        string
+	config           *config
+	logger           *elog.Component
+	client           *Client
+	consumers        map[string]*Consumer
+	consumerServers  map[string]*ConsumerServer
+	producers        map[string]*Producer
+	consumerGroups   map[string]*ConsumerGroup
+	clientOnce       sync.Once
+	consumerMu       sync.RWMutex
+	consumerServerMu sync.RWMutex
+	producerMu       sync.RWMutex
+	consumerGroupMu  sync.RWMutex
+	compName         string
 }
 
 func (cmp *Component) GetCompName() string {
@@ -38,6 +40,29 @@ func (cmp *Component) interceptorClientChain() func(oldProcess clientProcessFn) 
 
 func (cmp *Component) interceptorServerChain() func(oldProcess serverProcessFn) serverProcessFn {
 	return InterceptorServerChain(cmp.config.serverInterceptors...)
+}
+
+func (cmp *Component) ConsumerServer(name string) *ConsumerServer {
+	cmp.consumerServerMu.RLock()
+	if cs, ok := cmp.consumerServers[name]; ok {
+		cmp.consumerServerMu.RUnlock()
+		return cs
+	}
+	cmp.consumerServerMu.RUnlock()
+
+	cmp.consumerServerMu.Lock()
+	if cs, ok := cmp.consumerServers[name]; ok {
+		cmp.consumerServerMu.Unlock()
+		return cs
+	}
+	cmp.consumerServerMu.Unlock()
+
+	cmp.consumerServerMu.Lock()
+	csConfig := cmp.config.ConsumerServers[name]
+	cmp.consumerServers[name] = newConsumerServerComponent(name, &csConfig, cmp, cmp.logger)
+	cmp.consumerServerMu.Unlock()
+
+	return cmp.consumerServers[name]
 }
 
 // Producer 返回指定名称的kafka Producer

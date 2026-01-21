@@ -8,7 +8,8 @@ import (
 )
 
 func writeMessage(producer *ekafka.Producer, message string, errCh chan<- error) {
-	writeCtx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	writeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	err := producer.WriteMessages(
 		writeCtx,
 		&ekafka.Message{Value: []byte(message)},

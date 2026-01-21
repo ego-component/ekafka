@@ -20,7 +20,7 @@ minBytes = 100
 partitionWatchInterval = "1s"
 topic = "test-topic"
 
-[kafkaConsumerServers.s1]
+[kafka.consumerServers.s1]
 consumerName = "c1"
 consumerGroupName="cg1"
 

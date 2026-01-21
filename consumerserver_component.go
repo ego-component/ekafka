@@ -1,4 +1,4 @@
-package consumerserver
+package ekafka
 
 import (
 	"context"
@@ -13,18 +13,23 @@ import (
 	"github.com/gotomicro/ego/core/emetric"
 	"github.com/gotomicro/ego/server"
 	"github.com/segmentio/kafka-go"
-
-	"github.com/ego-component/ekafka"
 )
+
+type consumerServerConfig struct {
+	Debug             bool   `json:"debug" toml:"debug"`
+	ConsumerName      string `json:"consumerName" toml:"consumerName"`
+	ConsumerGroupName string `json:"consumerGroupName" toml:"consumerGroupName"`
+	ekafkaComponent   *Component
+}
 
 // OnEachMessageHandler 的最大重试次数
 const maxOnEachMessageHandlerRetryCount = 3
 
 // Interface check
-var _ server.Server = (*Component)(nil)
+var _ server.Server = (*ConsumerServer)(nil)
 
 // PackageName is the name of this component.
-const PackageName = "component.ekafka.consumerserver"
+const CsPackageName = "component.ekafka.consumerserver"
 
 type consumptionMode int
 
@@ -35,13 +40,13 @@ const (
 	consumptionModeOnConsumerConsumeEachMessage
 )
 
-// Component starts an Ego server for message consuming.
-type Component struct {
+// ConsumerServer starts an Ego server for message consuming.
+type ConsumerServer struct {
 	ServerCtx                   context.Context
 	stopServer                  context.CancelFunc
-	config                      *config
+	config                      *consumerServerConfig
 	name                        string
-	ekafkaComponent             *ekafka.Component
+	ekafkaComponent             *Component
 	logger                      *elog.Component
 	mode                        consumptionMode
 	onConsumerStartHandler      OnStartHandler
@@ -51,12 +56,12 @@ type Component struct {
 }
 
 // PackageName returns the package name.
-func (cmp *Component) PackageName() string {
-	return PackageName
+func (cmp *ConsumerServer) PackageName() string {
+	return CsPackageName
 }
 
 // Info returns server info, used by governor and consumer balancer.
-func (cmp *Component) Info() *server.ServiceInfo {
+func (cmp *ConsumerServer) Info() *server.ServiceInfo {
 	info := server.ApplyOptions(
 		server.WithKind(constant.ServiceProvider),
 	)
@@ -64,29 +69,29 @@ func (cmp *Component) Info() *server.ServiceInfo {
 }
 
 // GracefulStop stops the server.
-func (cmp *Component) GracefulStop(ctx context.Context) error {
+func (cmp *ConsumerServer) GracefulStop(ctx context.Context) error {
 	cmp.stopServer()
 	return nil
 }
 
 // Stop stops the server.
-func (cmp *Component) Stop() error {
+func (cmp *ConsumerServer) Stop() error {
 	cmp.stopServer()
 	return nil
 }
 
 // Init ...
-func (cmp *Component) Init() error {
+func (cmp *ConsumerServer) Init() error {
 	return nil
 }
 
 // Name returns the name of this instance.
-func (cmp *Component) Name() string {
+func (cmp *ConsumerServer) Name() string {
 	return cmp.name
 }
 
 // Start will start consuming.
-func (cmp *Component) Start() error {
+func (cmp *ConsumerServer) Start() error {
 	switch cmp.mode {
 	case consumptionModeOnConsumerStart:
 		return cmp.launchOnConsumerStart()
@@ -102,60 +107,51 @@ func (cmp *Component) Start() error {
 }
 
 // Consumer returns the default Consumer.
-func (cmp *Component) Consumer() *ekafka.Consumer {
+func (cmp *ConsumerServer) Consumer() *Consumer {
 	return cmp.ekafkaComponent.Consumer(cmp.config.ConsumerName)
 }
 
 // ConsumerGroup returns the default ConsumerGroup.
-func (cmp *Component) ConsumerGroup() *ekafka.ConsumerGroup {
+func (cmp *ConsumerServer) ConsumerGroup() *ConsumerGroup {
 	return cmp.ekafkaComponent.ConsumerGroup(cmp.config.ConsumerGroupName)
-}
-
-// OnEachMessage ...
-// Deprecated: use OnConsumeEachMessage instead.
-func (cmp *Component) OnEachMessage(consumptionErrors chan<- error, handler OnEachMessageHandler) error {
-	cmp.consumptionErrors = consumptionErrors
-	cmp.mode = consumptionModeOnConsumerEachMessage
-	cmp.listeners = listeners{listenerWrapper{onEachMessageHandler: handler}}
-	return nil
 }
 
 // OnConsumeEachMessage register a handler for each message. When the handler returns an error, the message will be
 // retried if the error is ErrRecoverableError else the message will not be committed.
-func (cmp *Component) OnConsumeEachMessage(handler OnConsumeEachMessageHandler) error {
+func (cmp *ConsumerServer) OnConsumeEachMessage(handler OnConsumeEachMessageHandler) error {
 	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
 	cmp.listeners = listeners{listenerWrapper{onConsumeEachMessageHandler: handler}}
 	return nil
 }
 
 // Subscribe append a handler for each message.
-func (cmp *Component) Subscribe(listener Listener) {
+func (cmp *ConsumerServer) Subscribe(listener Listener) {
 	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
 	cmp.listeners = append(cmp.listeners, listener)
 }
 
 // SubscribeSingleHandler append a single listener with this handler for each message
-func (cmp *Component) SubscribeSingleHandler(handler Handler) {
+func (cmp *ConsumerServer) SubscribeSingleHandler(handler Handler) {
 	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
 	cmp.listeners = append(cmp.listeners, cmp.newListener(handler))
 }
 
 // SubscribeBatchHandler append a batch listener with this handler for each message. A batch messages will be handled when
 // batch size or timeout reached
-func (cmp *Component) SubscribeBatchHandler(handler BatchHandler, batchSize int, timeout time.Duration) {
+func (cmp *ConsumerServer) SubscribeBatchHandler(handler BatchHandler, batchSize int, timeout time.Duration) {
 	cmp.mode = consumptionModeOnConsumerConsumeEachMessage
 	cmp.listeners = append(cmp.listeners, cmp.newBatchListener(handler, batchSize, timeout))
 }
 
 // OnStart ...
-func (cmp *Component) OnStart(handler OnStartHandler) error {
+func (cmp *ConsumerServer) OnStart(handler OnStartHandler) error {
 	cmp.mode = consumptionModeOnConsumerStart
 	cmp.onConsumerStartHandler = handler
 	return nil
 }
 
 // OnConsumerGroupStart ...
-func (cmp *Component) OnConsumerGroupStart(handler OnConsumerGroupStartHandler) error {
+func (cmp *ConsumerServer) OnConsumerGroupStart(handler OnConsumerGroupStartHandler) error {
 	cmp.mode = consumptionModeOnConsumerGroupStart
 	cmp.onConsumerGroupStartHandler = handler
 	return nil
@@ -170,7 +166,7 @@ func isErrorUnrecoverable(err error) bool {
 	return true
 }
 
-func (cmp *Component) launchOnConsumerGroupStart() error {
+func (cmp *ConsumerServer) launchOnConsumerGroupStart() error {
 	consumerGroup := cmp.ConsumerGroup()
 
 	if cmp.onConsumerGroupStartHandler == nil {
@@ -216,7 +212,7 @@ func (cmp *Component) launchOnConsumerGroupStart() error {
 	return originErr
 }
 
-func (cmp *Component) launchOnConsumerStart() error {
+func (cmp *ConsumerServer) launchOnConsumerStart() error {
 	consumer := cmp.Consumer()
 
 	if cmp.onConsumerStartHandler == nil {
@@ -262,7 +258,7 @@ func (cmp *Component) launchOnConsumerStart() error {
 	return originErr
 }
 
-func (cmp *Component) launchOnConsumerEachMessage() error {
+func (cmp *ConsumerServer) launchOnConsumerEachMessage() error {
 	consumer := cmp.Consumer()
 	if len(cmp.listeners) == 0 {
 		return errors.New("you must define a MessageHandler first")
@@ -356,7 +352,7 @@ func (cmp *Component) launchOnConsumerEachMessage() error {
 	}
 }
 
-func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
+func (cmp *ConsumerServer) launchOnConsumerConsumeEachMessage() error {
 	consumer := cmp.Consumer()
 	if len(cmp.listeners) == 0 {
 		return errors.New("you must define a MessageHandler first")
@@ -390,14 +386,14 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 			err = cmp.listeners.dispatch(fetchCtx, &message, cmp.logger)
 			// Record the redis kafka-consuming
 			emetric.ClientHandleHistogram.WithLabelValues("kafka", compNameTopic, "HANDLER", brokers).Observe(time.Since(now).Seconds())
-			if err != nil && !errors.Is(err, ekafka.ErrDoNotCommit) {
+			if err != nil && !errors.Is(err, ErrDoNotCommit) {
 				emetric.ClientHandleCounter.Inc("kafka", compNameTopic, "HANDLER", brokers, "Error")
 			} else {
 				emetric.ClientHandleCounter.Inc("kafka", compNameTopic, "HANDLER", brokers, "OK")
 			}
 
 			if err != nil {
-				if errors.Is(err, ekafka.ErrDoNotCommit) {
+				if errors.Is(err, ErrDoNotCommit) {
 					cmp.logger.Debug("skipping commit message due to NotCommit error", elog.FieldCtxTid(fetchCtx), elog.String("msgId", msgId))
 					continue
 				}
@@ -453,7 +449,7 @@ func (cmp *Component) launchOnConsumerConsumeEachMessage() error {
 	}
 }
 
-func (cmp *Component) closeConsumer(consumer *ekafka.Consumer) error {
+func (cmp *ConsumerServer) closeConsumer(consumer *Consumer) error {
 	if err := consumer.Close(); err != nil {
 		cmp.logger.Fatal("failed to close Consumer", elog.FieldErr(err))
 		return err
@@ -462,7 +458,7 @@ func (cmp *Component) closeConsumer(consumer *ekafka.Consumer) error {
 	return nil
 }
 
-func (cmp *Component) closeConsumerGroup(consumerGroup *ekafka.ConsumerGroup) error {
+func (cmp *ConsumerServer) closeConsumerGroup(consumerGroup *ConsumerGroup) error {
 	if err := consumerGroup.Close(); err != nil {
 		cmp.logger.Fatal("failed to close ConsumerGroup", elog.FieldErr(err))
 		return err
@@ -472,9 +468,9 @@ func (cmp *Component) closeConsumerGroup(consumerGroup *ekafka.ConsumerGroup) er
 }
 
 // NewConsumerServerComponent creates a new server instance.
-func NewConsumerServerComponent(name string, config *config, ekafkaComponent *ekafka.Component, logger *elog.Component) *Component {
+func newConsumerServerComponent(name string, config *consumerServerConfig, ekafkaComponent *Component, logger *elog.Component) *ConsumerServer {
 	serverCtx, stopServer := context.WithCancel(context.Background())
-	return &Component{
+	return &ConsumerServer{
 		ServerCtx:       serverCtx,
 		stopServer:      stopServer,
 		name:            name,

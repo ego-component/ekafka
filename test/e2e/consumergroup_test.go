@@ -25,7 +25,9 @@ func consumerGroupConsume(
 	closeConsumerGroup bool,
 ) {
 	for {
-		pollCtx, _ := context.WithTimeout(ctx, 1*time.Minute)
+		pollCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+		cancel()
+
 		event, err := consumerGroup.Poll(pollCtx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -38,7 +40,9 @@ func consumerGroupConsume(
 		case *ekafka.CtxMessage:
 			received := string(e.Value)
 			if received == expectedMessage {
-				commitCtx, _ := context.WithTimeout(e.Ctx, 10*time.Second)
+				commitCtx, cancel := context.WithTimeout(e.Ctx, 10*time.Second)
+				defer cancel()
+
 				err := consumerGroup.CommitMessages(commitCtx, ekafka.Message{
 					Partition: e.Partition,
 					Offset:    e.Offset,

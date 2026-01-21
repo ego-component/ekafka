@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ego-component/ekafka"
-	"github.com/ego-component/ekafka/consumerserver"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/ego-component/ekafka"
 )
 
 // 测试 ConsumeServer 的 OnConsumerEachMessage 方法
@@ -27,16 +27,14 @@ func Test_ConsumeServer_OnConsumerEachMessage(t *testing.T) {
 	// 尝试消费 producer 推送的随机字符串消息
 	consumed := make(chan struct{}, 1)
 	consumptionErr := make(chan error, 10)
-	consumerServerComponent := consumerserver.Load("kafkaConsumerServers.s1").Build(
-		consumerserver.WithEkafka(ekafkaComponent),
-	)
+	consumerServerComponent := ekafkaComponent.ConsumerServer("s1")
+
 	go func() {
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		consumerServerComponent.OnEachMessage(
-			consumptionErr,
-			func(ctx context.Context, message kafka.Message) error {
+		consumerServerComponent.OnConsumeEachMessage(
+			func(ctx context.Context, message *kafka.Message) error {
 				received := string(message.Value)
 				if received == randomMessage {
 					consumed <- struct{}{}
@@ -83,9 +81,8 @@ func Test_ConsumeServer_OnConsumerStart(t *testing.T) {
 	// 尝试消费 producer 推送的随机字符串消息
 	consumed := make(chan struct{}, 1)
 	consumptionErr := make(chan error, 10)
-	consumerServerComponent := consumerserver.Load("kafkaConsumerServers.s1").Build(
-		consumerserver.WithEkafka(ekafkaComponent),
-	)
+	consumerServerComponent := ekafkaComponent.ConsumerServer("s1")
+
 	go func() {
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
@@ -148,10 +145,7 @@ func Test_ConsumeServer_OnConsumerGroupStart(t *testing.T) {
 	consumed := make(chan struct{}, 1)
 	consumptionErr := make(chan error, 10)
 	go func() {
-		consumerServerComponent := consumerserver.Load("kafkaConsumerServers.s1").Build(
-			consumerserver.WithEkafka(ekafkaComponent),
-		)
-
+		consumerServerComponent := ekafkaComponent.ConsumerServer("s1")
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
