@@ -7,9 +7,10 @@ import (
 )
 
 type Producer struct {
-	w         *kafka.Writer
-	processor ClientInterceptor
-	logMode   bool
+	w           *kafka.Writer
+	processor   ClientInterceptor
+	logMode     bool
+	errRecorder *produceErrorRecorder
 }
 
 func (p *Producer) setProcessor(c ClientInterceptor) {
@@ -26,6 +27,13 @@ func (p *Producer) Close() error {
 func (p *Producer) WriteMessages(ctx context.Context, msgs ...*Message) error {
 	return p.processor(func(ctx context.Context, req Messages, c *cmd) error {
 		logCmd(p.logMode, c, "WriteMessages", cmdWithTopic(p.w.Topic))
-		return p.w.WriteMessages(ctx, req.ToNoPointer()...)
+		if p.errRecorder != nil {
+			p.errRecorder.reset()
+		}
+		err := p.w.WriteMessages(ctx, req.ToNoPointer()...)
+		if p.errRecorder != nil {
+			err = normalizeWriteError(err, p.errRecorder)
+		}
+		return err
 	})(ctx, msgs, &cmd{})
 }

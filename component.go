@@ -100,11 +100,20 @@ func (cmp *Component) Producer(name string) *Producer {
 		cmp.logger.Panic("create mechanism error", elog.String("mechanism", cmp.config.SASLMechanism), elog.String("errorDetail", err.Error()))
 	}
 
-	transport := &kafka.Transport{}
+	baseTransport := &kafka.Transport{}
 	if mechanism != nil {
 		cmp.logger.Debug("new transport with sasl mechanism", elog.String("mechanism", cmp.config.SASLMechanism), elog.String("username", cmp.config.SASLUserName), elog.String("password", cmp.config.SASLPassword))
-		cmp.newProducerSASLTransport(transport, mechanism)
+		cmp.newProducerSASLTransport(baseTransport, mechanism)
 	}
+
+	err = cmp.config.Authentication.ConfigureTransportAuthentication(baseTransport)
+	if err != nil {
+		cmp.producerMu.Unlock()
+		cmp.logger.Panic("producer transport config error", elog.String("name", name), elog.Any("authentication", cmp.config.Authentication), elog.FieldErr(err))
+	}
+
+	errRecorder := newProduceErrorRecorder()
+	transport := newErrorCapturingTransport(baseTransport, errRecorder)
 
 	kafkaWriter := &kafka.Writer{
 		Addr:         kafka.TCP(cmp.config.Brokers...),
@@ -118,23 +127,17 @@ func (cmp *Component) Producer(name string) *Producer {
 		WriteTimeout: config.WriteTimeout,
 		RequiredAcks: config.RequiredAcks,
 		Async:        config.Async,
-	}
-
-	if transport != nil {
-		kafkaWriter.Transport = transport
+		Transport:    transport,
 	}
 	if config.Compression > 0 {
 		cmp.logger.Debug("setup writer compression", elog.Int("compression", config.Compression))
 		kafkaWriter.Compression = kafka.Compression(config.Compression)
 	}
 
-	err = cmp.config.Authentication.ConfigureTransportAuthentication(transport)
-	if err != nil {
-		cmp.logger.Panic("producer transport config error", elog.String("name", name), elog.Any("authentication", cmp.config.Authentication), elog.FieldErr(err))
-	}
 	producer := &Producer{
-		w:       kafkaWriter,
-		logMode: cmp.config.Debug,
+		w:           kafkaWriter,
+		logMode:     cmp.config.Debug,
+		errRecorder: errRecorder,
 	}
 	producer.setProcessor(cmp.interceptorClientChain())
 	cmp.producers[name] = producer
